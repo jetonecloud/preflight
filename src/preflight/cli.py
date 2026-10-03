@@ -2,7 +2,8 @@ import typer
 
 app = typer.Typer(
     name="preflight",
-    help="Free, read-only AWS audit CLI. Finds the first three things to fix in deploys, cost, and bus factor.",
+    help="Free, read-only AWS audit CLI. Finds the first three things to fix "
+    "in deploys, cost, and bus factor.",
 )
 
 
