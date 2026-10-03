@@ -11,7 +11,7 @@ We're [Jet1](https://jetonecloud.com), a managed DevOps team for startups that h
 Install it:
 
 ```sh
-curl -fsSL https://get.preflight.dev | sh
+curl -fsSL https://jetonecloud.com/preflight | sh
 ```
 
 You can also install it with `pipx`, `brew`, or Docker (see [`docs/installation.md`](docs/installation.md)). If you don't have the AWS CLI set up locally, you can [run it from AWS CloudShell](docs/cloudshell.md) instead.
@@ -41,17 +41,6 @@ preflight scan --profile my-profile --region us-east-1
 ```
 
 Preflight checks whether that identity has write or admin access and will warn you if it does. We'd still recommend the dedicated role.
-
-## What it checks
-
-| Area | For example |
-|---|---|
-| Cost | Unattached EBS volumes and Elastic IPs, idle NAT gateways and load balancers, stopped instances, old snapshots, oversized instances, missing Savings Plans, environments nobody's using |
-| Security and IAM | MFA, stale access keys, root account usage, public S3 buckets, open security groups, CloudTrail, encryption defaults |
-| Reliability | Single-AZ databases, missing backups, no autoscaling, missing health checks |
-| Delivery and IaC | How much is managed by IaC, CloudFormation drift, deploy strategy, `latest` image tags, stale AMIs, SSH-only access |
-| Observability | Alarm coverage, log retention, dashboards, tracing |
-| Bus factor | Whether changes (from CloudTrail) come from just a few people, how many admins you have, resources with no clear owner |
 
 ## Permissions and your data
 
