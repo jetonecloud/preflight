@@ -53,6 +53,9 @@ credentials.json
 .env.*
 !.env.example
 
+# Local drafts and notes
+.local/
+
 # Editors / OS
 .vscode/
 .idea/
