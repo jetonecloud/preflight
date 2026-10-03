@@ -1,95 +1,78 @@
 # Preflight
 
-**Free, open-source, read-only AWS audit CLI.** Run it on your laptop and get the first three things to fix in **deploys, cost, and bus factor** — in plain language, in under 5 minutes. Your AWS credentials never leave your machine.
+Preflight is a command-line tool that audits your AWS account and tells you what's worth fixing. It looks at how you deploy, what you're spending, and how much of your infrastructure depends on one or two people, then writes up a report you can share with the rest of your team.
 
-Built by [Jet1](https://jetonecloud.com) — a managed DevOps team for startups that haven't hired a DevOps engineer yet.
+It's read-only and open source (Apache-2.0), and it runs on your own machine. Your AWS credentials stay there.
 
-```
-preflight scan
-```
+We're [Jet1](https://jetonecloud.com), a managed DevOps team for startups that haven't hired a DevOps engineer yet. Preflight is the audit we run on every first call, packaged so you can run it yourself.
 
-## Why
+## Getting started
 
-Most AWS audit tools dump hundreds of raw findings. Preflight asks three questions instead:
-
-1. **Deploys** — Are releases risky, manual, or stuck to a maintenance window?
-2. **Cost** — Where is money being wasted, and how much (conservatively estimated)?
-3. **Bus factor** — Does only one person understand this setup?
-
-It scores each 0–100, and tells you the **top 3 fixes** first. Everything else is available in the detailed report if you want it.
-
-## Principles
-
-- **Read-only, always.** The IAM policy ([`iam/policy.json`](iam/policy.json)) contains only `Get*`, `List*`, `Describe*` actions. No wildcards, no write permissions, no exceptions.
-- **Credentials never leave your machine.** Preflight uses the standard AWS credential chain (profile, SSO, STS, assume-role). It never asks for access keys and never transmits credentials.
-- **Nothing is sent anywhere without your explicit consent.** The local HTML/JSON report is the default and only output. Sending a summary to Jet1 (so we can email it to you) is opt-in, and `preflight preview` shows exactly what would be sent before you agree to anything.
-- **Open source and inspectable.** Apache-2.0. Releases are signed with checksums so you can verify what you run.
-- **Honest estimates.** Dollar figures are conservative, labeled as estimates, and show their derivation.
-
-See [`SECURITY.md`](SECURITY.md) for the full data-handling and threat model.
-
-## Install
+Install it:
 
 ```sh
 curl -fsSL https://get.preflight.dev | sh
 ```
 
-Also available via `pipx`, `brew`, and Docker. See [`docs/installation.md`](docs/installation.md).
+You can also install it with `pipx`, `brew`, or Docker (see [`docs/installation.md`](docs/installation.md)). If you don't have the AWS CLI set up locally, you can [run it from AWS CloudShell](docs/cloudshell.md) instead.
 
-Don't have AWS CLI access configured? Run it from [AWS CloudShell](docs/cloudshell.md) — no local install needed.
-
-## Usage
+To see what a report looks like before pointing it at your account:
 
 ```sh
-# See a sample report with no AWS access required
 preflight demo
-
-# Run a real scan against your default AWS profile
-preflight scan
-
-# Run against a specific profile/region
-preflight scan --profile my-profile --region us-east-1
-
-# See exactly what would be sent before opting in to email delivery
-preflight preview
 ```
 
-Preflight will tell you upfront what it's about to read, check that your credentials are read-only (and warn you if they're not), and generate a self-contained HTML report plus a JSON export.
+When you're ready to scan for real:
+
+1. Deploy [`iam/role.cfn.yaml`](iam/role.cfn.yaml) from the CloudFormation console. It creates a role with the permissions in [`iam/policy.json`](iam/policy.json) and nothing else.
+2. Log in to AWS the way you usually do (`aws sso login`, a named profile, and so on). Preflight won't ask you for access keys.
+3. Run the scan with the role ARN from the stack's outputs:
+
+```sh
+preflight scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole --region us-east-1
+```
+
+Before it starts, Preflight lists what it's going to read. When it's done, you'll have an HTML report and a JSON export saved locally.
+
+If you'd rather not create the role, you can scan with an existing profile:
+
+```sh
+preflight scan --profile my-profile --region us-east-1
+```
+
+Preflight checks whether that identity has write or admin access and will warn you if it does. We'd still recommend the dedicated role.
 
 ## What it checks
 
-| Module | Examples |
+| Area | For example |
 |---|---|
-| **Cost** | Unattached EBS/EIPs, idle NAT gateways & load balancers, stopped instances, old snapshots, oversized instances, missing Savings Plans, forgotten environments |
-| **Security / IAM** | MFA, stale access keys, root account usage, public S3 buckets, open security groups, CloudTrail, encryption defaults |
-| **Reliability** | Single-AZ databases, missing backups, no autoscaling, missing health checks |
-| **Delivery & IaC** | IaC coverage, CloudFormation drift, deploy strategy, `latest` image tags, stale AMIs, SSH-only access |
-| **Observability** | Alarm coverage, log retention, dashboards, tracing |
-| **Bus factor** | Change concentration across principals (via CloudTrail), admin count, unowned resources |
+| Cost | Unattached EBS volumes and Elastic IPs, idle NAT gateways and load balancers, stopped instances, old snapshots, oversized instances, missing Savings Plans, environments nobody's using |
+| Security and IAM | MFA, stale access keys, root account usage, public S3 buckets, open security groups, CloudTrail, encryption defaults |
+| Reliability | Single-AZ databases, missing backups, no autoscaling, missing health checks |
+| Delivery and IaC | How much is managed by IaC, CloudFormation drift, deploy strategy, `latest` image tags, stale AMIs, SSH-only access |
+| Observability | Alarm coverage, log retention, dashboards, tracing |
+| Bus factor | Whether changes (from CloudTrail) come from just a few people, how many admins you have, resources with no clear owner |
 
-Each module declares the exact IAM actions it uses — see [`iam/policy.json`](iam/policy.json) — so you can opt in per module.
+## Permissions and your data
 
-## Required IAM permissions
+The IAM policy in [`iam/policy.json`](iam/policy.json) only uses `Get`, `List`, and `Describe` actions, with no wildcards. Each module declares the actions it needs, so you can trim the policy down to just the checks you care about.
 
-Preflight ships a least-privilege, read-only IAM policy and an optional CloudFormation stack that creates a cross-account role for it:
+Preflight uses the standard AWS credential chain (profiles, SSO, STS, assume-role). It never handles your keys directly and never sends credentials anywhere.
 
-- [`iam/policy.json`](iam/policy.json) — the managed policy
-- [`iam/role.cfn.yaml`](iam/role.cfn.yaml) — a CloudFormation template for a dedicated read-only role
+By default, nothing leaves your machine. The one exception is opt-in: you can ask us to email you a copy of the report. If you do, Preflight sends a summary of scores and findings over HTTPS, optionally with account IDs and resource names redacted, after you confirm your email address with a magic link. Run `preflight preview` first to see exactly what would be sent. Raw API responses are never sent or stored.
 
-If the credentials you run Preflight with have write or admin access, it will warn you and recommend switching to the read-only role.
+The dollar figures in the report are estimates. We keep them on the conservative side, and each one shows how it was worked out.
 
-## Report and data handling
-
-Preflight always writes a local, self-contained HTML report and a JSON export. If you choose to email yourself a copy via Jet1, it sends a **summary only** (scores and findings, optionally redacted of account IDs and resource names) over HTTPS, after you confirm via `preflight preview` and verify your email with a magic link. Raw API responses and credentials are never transmitted or stored. Full details in [`SECURITY.md`](SECURITY.md).
+Releases are signed and come with checksums, so you can verify what you're running. [`SECURITY.md`](SECURITY.md) has the full details on data handling and our threat model.
 
 ## Contributing
 
-Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md). Please read [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) before participating.
+Contributions are welcome. Have a look at [`CONTRIBUTING.md`](CONTRIBUTING.md) and our [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) first.
 
 ## License
 
-Apache License 2.0 — see [`LICENSE`](LICENSE). Some check logic is adapted from other Apache-2.0/MIT-licensed open-source projects; attribution is tracked in [`NOTICE`](NOTICE).
+Apache License 2.0, see [`LICENSE`](LICENSE). Some of the check logic is adapted from other Apache-2.0 and MIT-licensed projects, and they're credited in [`NOTICE`](NOTICE).
 
-## About Jet1
+## Want help fixing what it finds?
 
-[Jet1](https://jetonecloud.com) is "the DevOps team you keep meaning to hire" — deploys, AWS/infrastructure, cost optimization, and on-call, SLA-backed, with everything owned by you. Preflight is the free version of the audit we do on every first call. If you'd rather talk to a human: [book 20 minutes with an engineer](https://jetonecloud.com/book).
+That's what we do at [Jet1](https://jetonecloud.com): deploys, AWS infrastructure, cost work, and on-call, with an SLA, and you own everything we build. If you'd like to talk it through with an engineer, [book a 20-minute call](https://jetonecloud.com/book).
