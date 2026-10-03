@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --all-extras --dev
+      - run: uv run pytest --cov --cov-report=term-missing
+
+  policy-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify IAM policy contains no write/wildcard actions
+        run: |
+          python3 - <<'EOF'
+          import json, sys
+          with open("iam/policy.json") as f:
+              policy = json.load(f)
+          allowed_prefixes = ("Get", "List", "Describe")
+          # Read-only actions that don't follow Get/List/Describe naming but
+          # perform no mutation. Keep in sync with tests/test_policy.py.
+          exceptions = {"cloudtrail:LookupEvents"}
+          bad = []
+          for stmt in policy.get("Statement", []):
+              actions = stmt.get("Action", [])
+              if isinstance(actions, str):
+                  actions = [actions]
+              for action in actions:
+                  if action == "*" or ":" not in action:
+                      bad.append(action)
+                      continue
+                  if action in exceptions:
+                      continue
+                  verb = action.split(":", 1)[1]
+                  if not verb.startswith(allowed_prefixes) or verb == "*":
+                      bad.append(action)
+          if bad:
+              print("Non-read-only actions found in iam/policy.json:", bad)
+              sys.exit(1)
+          print("iam/policy.json is read-only. OK.")
+          EOF
