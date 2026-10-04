@@ -55,10 +55,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Oldest available image per platform: a binary built against an older
+        # glibc/macOS SDK runs on newer systems, but not the other way round.
+        # macos-15-intel is the Intel runner now that macos-13 is retired.
         include:
           - { os: ubuntu-22.04, target: linux-x86_64 }
           - { os: ubuntu-22.04-arm, target: linux-aarch64 }
-          - { os: macos-13, target: macos-x86_64 }
+          - { os: macos-15-intel, target: macos-x86_64 }
           - { os: macos-14, target: macos-arm64 }
     runs-on: ${{ matrix.os }}
     steps:
