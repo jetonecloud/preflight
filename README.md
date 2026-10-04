@@ -24,9 +24,17 @@ preflight demo
 
 When you're ready to scan for real:
 
-1. Deploy [`iam/role.cfn.yaml`](iam/role.cfn.yaml) from the CloudFormation console. It creates a role with the permissions in [`iam/policy.json`](iam/policy.json) and nothing else.
-2. Log in to AWS the way you usually do (`aws sso login`, a named profile, and so on). Preflight won't ask you for access keys.
-3. Run the scan with the role ARN from the stack's outputs:
+1. Pick what you want checked and generate the role it needs:
+
+```sh
+preflight scan --modules cost --save
+```
+
+   Run `preflight scan` on its own and it'll ask instead: first which checks to run, then which permissions to grant them. Every service the checks need starts selected, and you can switch any of them off with the arrow keys — `--services ec2,rds` does the same thing without the questions. Either way you get a CloudFormation template granting only the read-only actions those checks declare — nothing for the modules you didn't pick. This step makes no AWS calls and needs no credentials, so you can read the whole template before anything touches your account. ([`iam/role.cfn.yaml`](iam/role.cfn.yaml) is the same thing with every module selected.)
+
+2. Deploy the template from the CloudFormation console, or with `aws cloudformation deploy`. The stack's `RoleArn` output is what you pass back to Preflight.
+3. Log in to AWS the way you usually do (`aws sso login`, a named profile, and so on). Preflight won't ask you for access keys.
+4. Run the scan with the role ARN from the stack's outputs:
 
 ```sh
 preflight scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole --region us-east-1
@@ -44,7 +52,7 @@ Preflight checks whether that identity has write or admin access and will warn y
 
 ## Permissions and your data
 
-The IAM policy in [`iam/policy.json`](iam/policy.json) only uses `Get`, `List`, and `Describe` actions, with no wildcards. Each module declares the actions it needs, so you can trim the policy down to just the checks you care about.
+The IAM policy in [`iam/policy.json`](iam/policy.json) only uses `Get`, `List`, and `Describe` actions, with no wildcards. Each module declares the actions it needs, so the role Preflight generates covers the checks you picked and nothing else — `preflight scan --list-modules` shows what each one asks for, and the permission picker lets you cut it down further by service. Nothing with a write verb or a wildcard can reach a generated policy; Preflight refuses to emit one.
 
 Preflight uses the standard AWS credential chain (profiles, SSO, STS, assume-role). It never handles your keys directly and never sends credentials anywhere.
 
