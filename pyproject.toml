@@ -26,9 +26,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/jet1-cloud/preflight"
-Issues = "https://github.com/jet1-cloud/preflight/issues"
-Security = "https://github.com/jet1-cloud/preflight/blob/main/SECURITY.md"
+Homepage = "https://github.com/jetonecloud/preflight"
+Issues = "https://github.com/jetonecloud/preflight/issues"
+Security = "https://github.com/jetonecloud/preflight/blob/main/SECURITY.md"
 
 [project.scripts]
 preflight = "preflight.cli:app"

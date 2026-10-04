@@ -1,0 +1,169 @@
+name: Release
+
+# Tag a commit on main to cut a release:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Nothing ships unless CI passes and the tag matches preflight.__version__.
+# Assets are named without a version, so the installer can always fetch
+# .../releases/latest/download/preflight-<platform> without calling the API.
+
+on:
+  push:
+    tags: ["v*"]
+  # Dry run: builds and smoke-tests the binaries, publishes nothing.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  version-check:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Tag must match the packaged version
+        # Both places: __version__ is what the binary reports, the project
+        # metadata is what PyPI publishes. A release where they disagree
+        # ships a binary that misreports itself.
+        run: |
+          set -eu
+          uv sync --all-extras --dev
+          tag="${GITHUB_REF_NAME#v}"
+          attr=$(uv run python -c 'import preflight; print(preflight.__version__)')
+          meta=$(uv run python -c 'from importlib.metadata import version; print(version("preflight-cli"))')
+          echo "tag=$tag  __version__=$attr  metadata=$meta"
+          if [ "$tag" != "$attr" ] || [ "$tag" != "$meta" ]; then
+            echo "::error::tag v$tag doesn't match the package ($attr / $meta)."
+            echo "Bump src/preflight/__init__.py and pyproject.toml together, or retag."
+            exit 1
+          fi
+          echo "v$tag matches the package. OK."
+
+  build:
+    needs: [ci]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: linux-x86_64 }
+          - { os: ubuntu-22.04-arm, target: linux-aarch64 }
+          - { os: macos-13, target: macos-x86_64 }
+          - { os: macos-14, target: macos-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the project and PyInstaller
+        run: |
+          uv sync --all-extras --dev
+          uv pip install pyinstaller
+
+      - name: Build a single-file binary
+        # --add-data is load-bearing: core/cfn.py reads the CloudFormation
+        # template through importlib.resources, which finds nothing in a
+        # frozen bundle unless the file is copied in alongside the package.
+        #
+        # boto3 needs no flags here. Nothing imports it yet, so it isn't
+        # bundled at all; once the checks do, PyInstaller's bundled
+        # boto3/botocore hooks collect the service data on their own. The
+        # smoke test below is what proves that, build by build.
+        run: |
+          uv run pyinstaller \
+            --onefile \
+            --name preflight \
+            --paths src \
+            --add-data "src/preflight/templates/role.cfn.yaml.j2:preflight/templates" \
+            src/preflight/cli.py
+
+      - name: Smoke-test the binary
+        # Catches a missing template, a missing boto3 data file, and a binary
+        # that can't start at all — none of which the test suite can see.
+        run: |
+          set -eu
+          ./dist/preflight --help > /dev/null
+          ./dist/preflight scan --list-modules
+          ./dist/preflight scan -m cost --print | grep -q "AWSTemplateFormatVersion"
+          ./dist/preflight scan -m cost --services ec2 --print | grep -q "ec2:DescribeVolumes"
+          ./dist/preflight scan -m cost --out "$RUNNER_TEMP/role.yaml"
+          grep -q "PreflightReadOnlyRole" "$RUNNER_TEMP/role.yaml"
+          echo "binary works on ${{ matrix.target }}"
+
+      - name: Name the asset after its platform
+        run: mv dist/preflight "preflight-${{ matrix.target }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preflight-${{ matrix.target }}
+          path: preflight-${{ matrix.target }}
+          if-no-files-found: error
+
+  publish:
+    needs: [build, version-check]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
+      id-token: write # OIDC, for build provenance
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: preflight-*
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          chmod +x preflight-*
+          sha256sum preflight-* > checksums.txt
+          cat checksums.txt
+
+      - name: Attest what built these binaries
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/preflight-*
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/preflight-*
+            dist/checksums.txt
+            install.sh
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  publish-pypi:
+    # Makes `pipx install preflight-cli` and `uv tool install preflight-cli`
+    # real. Needs a PyPI trusted publisher for this repo + workflow; delete
+    # this job if you'd rather not publish to PyPI yet.
+    needs: [build, version-check]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC, so there's no API token to store
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1

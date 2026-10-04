@@ -12,7 +12,7 @@ import sys
 import pytest
 from typer.testing import CliRunner
 
-from preflight import keys
+from preflight import __version__, keys
 from preflight.cli import app
 from preflight.core.cfn import DEFAULT_FILENAME, render_role_template
 from preflight.modules import by_key
@@ -36,6 +36,16 @@ def workdir(tmp_path, monkeypatch):
 
 def invoke(*args, **kwargs):
     return runner.invoke(app, list(args), env=ENV, **kwargs)
+
+
+# --- the app itself --------------------------------------------------------
+
+
+def test_version_goes_to_stdout():
+    """install.sh reads this to report what it installed."""
+    result = invoke("--version")
+    assert result.exit_code == 0
+    assert result.stdout.strip() == f"preflight {__version__}"
 
 
 # --- listing ---------------------------------------------------------------

@@ -8,7 +8,7 @@ from typing import Annotated, Any, NoReturn
 import click
 import typer
 
-from preflight import keys, ui
+from preflight import __version__, keys, ui
 from preflight.core.cfn import DEFAULT_FILENAME, render_role_template
 from preflight.core.iam import collect_actions, selectable_services
 from preflight.modules import (
@@ -31,6 +31,29 @@ app = typer.Typer(
 )
 
 TOTAL_STEPS = 3
+
+
+def _show_version(value: bool) -> None:
+    """`--version` on stdout, so a script can read it."""
+    if value:
+        typer.echo(f"preflight {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            "-V",
+            callback=_show_version,
+            is_eager=True,
+            help="Show the version and exit.",
+        ),
+    ] = False,
+) -> None:
+    pass
 
 
 def _tokens(raw: str) -> list[str]:

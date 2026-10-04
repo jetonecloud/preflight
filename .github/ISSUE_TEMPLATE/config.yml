@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/jet1-cloud/preflight/security/policy
+    url: https://github.com/jetonecloud/preflight/security/policy
     about: Please do not report security vulnerabilities as public issues — see SECURITY.md instead.
