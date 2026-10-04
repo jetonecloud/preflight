@@ -29,3 +29,15 @@ def test_policy_has_no_wildcard_actions():
     policy = json.loads(POLICY_PATH.read_text())
     for statement in policy["Statement"]:
         assert statement["Effect"] == "Allow"
+
+
+def test_the_rules_here_match_the_ones_the_cli_enforces():
+    """This file checks the policy on disk; `core.iam` checks what we generate.
+
+    They're deliberately separate implementations, so they have to agree on
+    what "read-only" means.
+    """
+    from preflight.core import iam
+
+    assert iam.READ_ONLY_PREFIXES == ALLOWED_PREFIXES
+    assert set(iam.READ_ONLY_EXCEPTIONS) == READ_ONLY_EXCEPTIONS
