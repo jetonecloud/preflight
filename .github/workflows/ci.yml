@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Release reuses these jobs, so a tag can't ship something that doesn't pass.
+  workflow_call:
 
 permissions:
   contents: read
@@ -18,6 +20,15 @@ jobs:
       - run: uv sync --all-extras --dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+
+  install-script:
+    # The installer is what most people will actually run, so hold it to the
+    # same bar as the Python: POSIX sh only, no shellcheck warnings.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck --shell=sh install.sh
+      - run: sh -n install.sh
 
   test:
     runs-on: ubuntu-latest

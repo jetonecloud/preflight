@@ -13,7 +13,7 @@ Thanks for considering a contribution. Preflight is Apache-2.0 licensed and buil
 ## Development setup
 
 ```sh
-git clone https://github.com/jet1-cloud/preflight.git
+git clone https://github.com/jetonecloud/preflight.git
 cd preflight
 uv sync
 uv run pytest

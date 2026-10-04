@@ -31,11 +31,23 @@ If your finding is specifically that a module or the generated IAM policy reques
 
 ## Verifying releases
 
-Releases are signed and published with checksums. Before running an installer or binary:
+Every release carries a `checksums.txt` and a signed build provenance attestation tying each binary to the workflow run and commit that produced it. Before running an installer or binary:
 
-1. Download the release artifact and its corresponding `.sig`/`.sha256` file from the [Releases page](https://github.com/jet1-cloud/preflight/releases).
-2. Verify the checksum and signature as documented in [`docs/verifying-releases.md`](docs/verifying-releases.md).
-3. Prefer `pipx`/`brew`/Docker over `curl | sh` if you'd rather not run a shell script sight-unseen — see [`README.md`](README.md#install).
+1. Download the binary and `checksums.txt` from the [Releases page](https://github.com/jetonecloud/preflight/releases), then check it:
+
+   ```sh
+   sha256sum --check --ignore-missing checksums.txt
+   ```
+
+   The `curl | sh` installer does this for you and refuses to install on a mismatch.
+
+2. Verify the provenance — this is what proves it was built from this repository, by our release workflow, and not uploaded by hand:
+
+   ```sh
+   gh attestation verify preflight-linux-x86_64 --repo jetonecloud/preflight
+   ```
+
+3. Prefer `pipx`/`brew`/Docker over `curl | sh` if you'd rather not run a shell script sight-unseen — see [`README.md`](README.md#getting-started). The installer is published as a release asset too, so you can read the exact version you're about to run.
 
 ## Scope
 
