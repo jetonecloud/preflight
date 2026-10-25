@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
@@ -108,11 +110,16 @@ def _ask(text: str, **kwargs: Any) -> str:
         _abandoned()
 
 
-def _confirm(text: str) -> bool:
+def _interactive() -> bool:
+    """Whether there's a person on the other end to answer a question."""
+    return sys.stdin.isatty()
+
+
+def _confirm(text: str, *, default: bool = False) -> bool:
     try:
-        return ui.confirm(text)
+        return ui.confirm(text, default=default)
     except (EOFError, KeyboardInterrupt, click.Abort):
-        return False
+        return default
 
 
 def _fail(message: str, hint: str | None = None, code: int = 1) -> NoReturn:
@@ -304,10 +311,276 @@ def _write_template(path: Path, text: str, *, force: bool, interactive: bool) ->
         _fail(f"Couldn't write {path}: {exc.strerror or exc}")
 
 
+#: Report formats `--format` understands.
+FORMATS = ("html", "json")
+
+DEFAULT_LOOKBACK_DAYS = 14
+
+
+def _formats(raw: str) -> tuple[str, ...]:
+    wanted = [token.lower() for token in _tokens(raw)]
+    unknown = [token for token in wanted if token not in FORMATS]
+    if unknown:
+        _fail(
+            f"Don't know the format {_quote(tuple(unknown))}.",
+            f"Pick from: {', '.join(FORMATS)}.",
+            code=2,
+        )
+    if not wanted:
+        _fail("No report format selected.", f"Pick from: {', '.join(FORMATS)}.", code=2)
+    return tuple(dict.fromkeys(wanted))
+
+
+def _open_in_browser(path: Path) -> None:
+    """Best effort — a report that didn't open is not a failed scan."""
+    import webbrowser
+
+    try:
+        webbrowser.open(path.resolve().as_uri())
+    except Exception:  # noqa: BLE001
+        ui.print_hint(f"Couldn't open a browser. The report is at {path}.")
+
+
+def _short(path: Path) -> str:
+    """A path relative to where you ran the command, if it is one."""
+    try:
+        return f"./{path.resolve().relative_to(Path.cwd())}"
+    except ValueError:
+        return str(path)
+
+
+def _deliver(result: Any, out: Path | None, formats: tuple[str, ...], show: bool) -> None:
+    """Write the report, say where it went, and show what's in it."""
+    from preflight.core import report
+
+    ui.print_headline(result)
+    ui.print_gaps(result)
+    paths = report.write(result, out or Path.cwd(), formats=formats)
+    ui.print_report_saved({label: _short(path) for label, path in paths.items()})
+    ui.print_scan_footer(result.seconds)
+    if show and "html" in paths:
+        _open_in_browser(paths["html"])
+
+
 @app.command()
-def demo() -> None:
-    """Render a sample report with no AWS access required."""
-    typer.echo("demo: not yet implemented")
+def demo(
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", "-o", help="Directory to write the sample report into."),
+    ] = None,
+    fmt: Annotated[
+        str,
+        typer.Option("--format", "-f", metavar="FORMATS", help="html, json, or both."),
+    ] = "html,json",
+    show: Annotated[
+        bool, typer.Option("--open", help="Open the report in your browser when it's written.")
+    ] = False,
+) -> None:
+    """Render a sample report, with no AWS account and no credentials.
+
+    The sample is produced by running the real checks against a made-up
+    account, so what you see is what the tool actually does — including the
+    cases it deliberately stays quiet about.
+    """
+    ui.print_banner()
+    formats = _formats(fmt)
+
+    from preflight import demo as sample
+
+    ui.console.print(
+        "  [dim]Sample data for a made-up account. No AWS calls, no credentials.[/dim]\n"
+    )
+    result = sample.build()
+    for outcome in result.outcomes:
+        ui.print_check_result(outcome.check.title, outcome)
+    _deliver(result, out, formats, show)
+
+
+def _modules_for_scan(raw: str | None) -> tuple[Module, ...]:
+    """Which modules a scan runs: everything available unless told otherwise."""
+    if raw is None:
+        return available_modules()
+    try:
+        return _select(raw)
+    except ModuleError as exc:
+        _report_selection_error(exc)
+        raise typer.Exit(2) from None
+
+
+def _list_checks(modules: str | None) -> None:
+    for module in _modules_for_scan(modules):
+        ui.print_checks(module)
+
+
+def _checks_to_run(selected: tuple[Module, ...], only: str | None) -> tuple[str, ...] | None:
+    """Resolve `--only`, or `None` for "all of them"."""
+    if only is None:
+        return None
+    known = {check.key for module in selected for check in module.checks}
+    wanted = tuple(dict.fromkeys(_tokens(only)))
+    unknown = tuple(key for key in wanted if key not in known)
+    if unknown:
+        ui.print_error(f"Don't know the check {_quote(unknown)}.")
+        ui.print_hint("List them with: preflight scan --list-checks")
+        raise typer.Exit(2)
+    if not wanted:
+        _fail("No checks selected.", "List them with: preflight scan --list-checks", code=2)
+    return wanted
+
+
+def _command_line(
+    *,
+    modules: tuple[Module, ...],
+    role_arn: str | None,
+    profile: str | None,
+    regions: str | None,
+    days: int,
+    only: str | None,
+) -> str:
+    """The command that reproduces this scan, for the report's header.
+
+    Rebuilt from the resolved options rather than copied out of `sys.argv`,
+    so nothing the user happened to type ends up in a file they might share.
+    """
+    parts = ["preflight scan", f"--modules {','.join(module.key for module in modules)}"]
+    if role_arn:
+        parts.append(f"--role-arn {role_arn}")
+    if profile:
+        parts.append(f"--profile {profile}")
+    if regions:
+        parts.append(f"--region {regions}")
+    if only:
+        parts.append(f"--only {only}")
+    if days != DEFAULT_LOOKBACK_DAYS:
+        parts.append(f"--days {days}")
+    return " ".join(parts)
+
+
+def _audit(
+    *,
+    modules: str | None,
+    profile: str | None,
+    role_arn: str | None,
+    external_id: str | None,
+    regions: str | None,
+    days: int,
+    only: str | None,
+    out: Path | None,
+    formats: tuple[str, ...],
+    redact: bool,
+    yes: bool,
+    show: bool,
+) -> None:
+    """Read the account and write a report.
+
+    Everything up to the confirmation is free: resolving credentials and
+    asking AWS who we are costs one `GetCallerIdentity`, and we show what
+    we're about to read before reading any of it.
+    """
+    from preflight.core import aws
+    from preflight.core import spend as spend_reader
+    from preflight.core.report import Account, ScanResult
+    from preflight.core.scan import ScanContext, ScanProgress, run_module
+    from preflight.core.session import identity_caution, open_session, resolve_regions
+
+    if days < 1:
+        _fail("--days has to be at least 1.", code=2)
+
+    selected = _modules_for_scan(modules)
+    wanted_checks = _checks_to_run(selected, only)
+    requested_regions = tuple(_tokens(regions)) if regions else ()
+
+    try:
+        session = open_session(
+            profile=profile,
+            role_arn=role_arn,
+            external_id=external_id,
+            region=requested_regions[0] if requested_regions else None,
+        )
+        identity = session.identity
+    except aws.AwsError as exc:
+        _fail(exc.message, exc.hint)
+
+    ui.print_target(identity.account_id, identity.arn, session.source)
+    caution = identity_caution(identity)
+    if caution:
+        ui.print_caution(*caution)
+
+    try:
+        plan = resolve_regions(session, requested_regions)
+    except aws.AwsError as exc:
+        _fail(exc.message, exc.hint)
+
+    checks = [
+        check
+        for module in selected
+        for check in module.checks
+        if wanted_checks is None or check.key in wanted_checks
+    ]
+    ui.print_plan(selected, checks, plan.regions, lookback_days=days, region_note=plan.note)
+
+    if not yes:
+        if not _interactive():
+            # No one to ask. Say so rather than hanging or quietly assuming.
+            ui.print_hint("Nothing to ask on, so going ahead. Use --yes to make that explicit.\n")
+        elif not _confirm("Read the account now?", default=True):
+            ui.print_error("Nothing was read.")
+            raise typer.Exit(1)
+    ui.console.print()
+
+    started = datetime.now(UTC)
+    ctx = ScanContext(session, regions=plan.regions, lookback_days=days)
+    if plan.note:
+        ctx.note(plan.note)
+
+    outcomes = []
+    try:
+        with ui.scanning() as status:
+            progress = ScanProgress(
+                on_check_start=lambda check: status.update(f"[dim]{check.title}…[/dim]"),
+                on_check_done=lambda outcome: ui.print_check_result(outcome.check.title, outcome),
+            )
+            for module in selected:
+                outcomes.extend(run_module(ctx, module, progress=progress, only=wanted_checks))
+            status.update("[dim]Looking up last month's bill…[/dim]")
+            spend = _read_spend(session, selected, spend_reader)
+    except aws.CredentialsError as exc:
+        _fail(exc.message, exc.hint)
+    except KeyboardInterrupt:
+        ui.console.print()
+        _fail("Stopped. Nothing was written.", code=130)
+
+    result = ScanResult(
+        account=Account.of(identity),
+        regions=plan.regions,
+        outcomes=tuple(outcomes),
+        modules=selected,
+        started_at=started,
+        finished_at=datetime.now(UTC),
+        lookback_days=days,
+        credentials=session.source,
+        command=_command_line(
+            modules=selected,
+            role_arn=role_arn,
+            profile=profile,
+            regions=regions,
+            days=days,
+            only=only,
+        ),
+        spend=spend,
+        notes=tuple(ctx.notes),
+    )
+    if redact:
+        result = result.redact()
+    _deliver(result, out, formats, show)
+
+
+def _read_spend(session: Any, modules: tuple[Module, ...], reader: Any) -> Any:
+    """Last month's bill, if any selected module asked for the permission."""
+    declared = {action for module in modules for action in module.iam_actions}
+    if reader.ACTION not in declared:
+        return None
+    return reader.read(session)
 
 
 @app.command()
@@ -341,7 +614,8 @@ def scan(
         typer.Option(
             "--out",
             "-o",
-            help="Write the role template to this path instead.",
+            help="Where to write: the role template's path, or the directory "
+            "the report goes in when you're scanning.",
             show_default=False,
         ),
     ] = None,
@@ -354,18 +628,81 @@ def scan(
     list_modules: Annotated[
         bool, typer.Option("--list-modules", help="List the modules and exit.")
     ] = False,
-    profile: Annotated[str | None, typer.Option(help="AWS profile to use.")] = None,
-    region: Annotated[str | None, typer.Option(help="AWS region to scan.")] = None,
-    role_arn: Annotated[
-        str | None, typer.Option(help="IAM role to assume before scanning.")
+    profile: Annotated[
+        str | None,
+        typer.Option(help="AWS profile to scan with. Implies a scan rather than a role."),
     ] = None,
+    region: Annotated[
+        str | None,
+        typer.Option(
+            metavar="REGIONS",
+            help="Regions to scan, comma-separated. Defaults to every region the "
+            "account has enabled.",
+            show_default=False,
+        ),
+    ] = None,
+    role_arn: Annotated[
+        str | None,
+        typer.Option(help="Read-only role to assume and scan with. The recommended way."),
+    ] = None,
+    external_id: Annotated[
+        str | None,
+        typer.Option(help="External ID, if the role's trust policy requires one."),
+    ] = None,
+    current: Annotated[
+        bool,
+        typer.Option(
+            "--current",
+            help="Scan with whatever credentials are already in the environment "
+            "(CloudShell, env vars, an instance role).",
+        ),
+    ] = False,
+    days: Annotated[
+        int,
+        typer.Option(
+            "--days",
+            metavar="N",
+            help="How many days of usage metrics the idle checks look at.",
+        ),
+    ] = DEFAULT_LOOKBACK_DAYS,
+    only: Annotated[
+        str | None,
+        typer.Option(
+            "--only",
+            metavar="CHECKS",
+            help="Run only these checks, comma-separated. See --list-checks.",
+            show_default=False,
+        ),
+    ] = None,
+    list_checks: Annotated[
+        bool, typer.Option("--list-checks", help="List the individual checks and exit.")
+    ] = False,
+    fmt: Annotated[
+        str,
+        typer.Option("--format", "-f", metavar="FORMATS", help="html, json, or both."),
+    ] = "html,json",
+    redact: Annotated[
+        bool,
+        typer.Option(
+            "--redact",
+            help="Replace account and resource identifiers with stable pseudonyms.",
+        ),
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Don't ask before reading the account.")
+    ] = False,
+    open_report: Annotated[
+        bool, typer.Option("--open", help="Open the report in your browser when it's written.")
+    ] = False,
 ) -> None:
-    """Pick what to check and generate the read-only IAM role it needs.
+    """Generate the read-only IAM role, or scan an account with it.
 
-    Runs entirely offline: no AWS calls, no credentials, nothing leaves your
-    machine. You get a CloudFormation template you can read before you deploy
-    it, granting only the Get/List/Describe actions the modules you picked
-    declare.
+    With no credentials given, this runs entirely offline and produces a
+    CloudFormation template you can read before you deploy it, granting only
+    the Get/List/Describe actions the modules you picked declare.
+
+    Give it `--role-arn` (or `--profile`, or `--current`) and it runs the
+    checks instead, and writes you a report.
     """
     ui.print_banner()
 
@@ -376,12 +713,48 @@ def scan(
         )
         raise typer.Exit()
 
-    if profile or region or role_arn:
-        ui.console.print(
-            "[yellow]![/yellow] The checks themselves aren't wired up yet, so "
-            "--profile/--region/--role-arn do nothing for now."
+    if list_checks:
+        _list_checks(modules)
+        raise typer.Exit()
+
+    if role_arn or profile or current:
+        # Flags that only mean something when generating a role. Say so
+        # rather than ignoring them, so nobody thinks --save wrote a report.
+        unused = [
+            flag
+            for flag, given in (
+                ("--save", save),
+                ("--print", show),
+                ("--force", force),
+                ("--services", services is not None),
+            )
+            if given
+        ]
+        if unused:
+            ui.print_hint(
+                f"{', '.join(unused)} only applies when generating a role, "
+                "so it was ignored here.\n"
+            )
+        _audit(
+            modules=modules,
+            profile=profile,
+            role_arn=role_arn,
+            external_id=external_id,
+            regions=region,
+            days=days,
+            only=only,
+            out=out,
+            formats=_formats(fmt),
+            redact=redact,
+            yes=yes,
+            show=open_report,
         )
-        ui.print_hint("This release gets the read-only role in place first.\n")
+        return
+
+    if region:
+        ui.print_hint(
+            "--region only applies to a scan. Add --role-arn (or --profile) to run one.\n"
+        )
 
     interactive = modules is None
 

@@ -1,6 +1,6 @@
 # Contributing to Preflight
 
-Thanks for considering a contribution. Preflight is Apache-2.0 licensed and built in the open — see [`CLAUDE.md`](CLAUDE.md) for the full project context, principles, and roadmap before diving in.
+Thanks for considering a contribution. Preflight is Apache-2.0 licensed and built in the open — see [`README.md`](README.md) for what it does and [`docs/cost-check.md`](docs/cost-check.md) for how a module is put together.
 
 ## Ground rules
 
@@ -23,15 +23,23 @@ uv run pytest
 - Lint/format with **Ruff**: `uv run ruff check . && uv run ruff format .`
 - Tests with **pytest** + **moto** for AWS mocking: `uv run pytest`
 
-## Adding or changing a module
+## Adding or changing a check
 
-- Each module is a self-contained plugin under `modules/`; shared logic belongs in `core/`.
-- Declare the exact IAM actions the module needs. Update `iam/policy.json` and `SECURITY.md` if the set of data read changes.
-- Every finding must conform to the shared finding schema (`id`, `module`, `title`, `severity`, `resource`, `evidence`, `estimated_monthly_savings` (optional), `recommendation`, `confidence`).
-- Add tests for every new check, including at least:
+Each module is a self-contained plugin under `modules/`; shared logic belongs in `core/`. A module with more than a couple of checks is a package — see [`modules/cost/`](src/preflight/modules/cost/), where the checks are grouped by what they read (`storage.py`, `network.py`, `compute.py`, `database.py`) and `__init__.py` holds the declaration.
+
+A check is a `Check` (see [`modules/base.py`](src/preflight/modules/base.py)) with a key, a title, a one-line `looks_for` written in plain words, the IAM actions it needs, and a function taking a `ScanContext` and yielding `Finding`s.
+
+- **Declare every action the check calls.** This is enforced at runtime, not by review: `ScanContext` raises `UndeclaredAction` if a check reaches for anything outside its own list. A test also asserts that a module's `iam_actions` is exactly the union of its checks' actions plus its `support_actions`, so the generated role can't drift from the code. Update `iam/policy.json` and `SECURITY.md` if the set of data read changes.
+- **Every finding uses the shared schema** in [`core/findings.py`](src/preflight/core/findings.py): `check`, `module`, `title`, `severity`, `confidence`, `resource`, `evidence`, `recommendation`, and an optional `estimate` (which serialises as `estimated_monthly_savings_usd`, `estimated_annual_savings_usd` and `estimate_basis`). Severity defaults to what the finding costs; set it explicitly only when the money understates the problem.
+- **Add tests for every new check**, including at least:
   - A case with no finding (the check correctly stays quiet)
-  - A false-positive guard case (e.g., a resource that looks idle but is tagged/recently active)
-- If the check estimates dollar savings, keep the estimate conservative and show the derivation (region, pricing API lookup, assumptions) in the finding's evidence.
+  - A false-positive guard case (e.g., a resource that looks idle but is tagged or recently active)
+  - A missing-permission case, asserting the check is skipped and names the action
+
+  [`tests/conftest.py`](tests/conftest.py) has the stubs; a check test should be a short list of API responses and an assertion.
+- **If the check estimates dollar savings**, keep the estimate conservative and put the derivation in `Estimate.basis` as a sentence someone can check with a calculator. A figure that can't be known is `None` — never a plausible-looking guess.
+- **Respect the opt-out.** Resources tagged `preflight:ignore` are skipped; use `core.scan.ignored()`.
+- **Treat an empty CloudWatch series as "we don't know", not as zero.** It's the easiest way to invent a false positive.
 
 ## Commit messages
 

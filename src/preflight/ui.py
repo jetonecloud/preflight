@@ -8,6 +8,7 @@ produces a clean file.
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
+from typing import Any
 
 from rich.console import Console
 from rich.padding import Padding
@@ -190,6 +191,24 @@ def print_permissions(
         console.print()
 
 
+def print_checks(module: Module) -> None:
+    """Every check in a module, with the permissions each one needs."""
+    table = Table(box=None, pad_edge=False, padding=(0, 2, 0, 0), header_style="dim")
+    table.add_column("Check", style="bold", no_wrap=True)
+    table.add_column("Looks for")
+    table.add_column("Reads", overflow="fold")
+    for check in module.checks:
+        table.add_row(
+            Text(check.key),
+            Text(check.looks_for),
+            Text(", ".join(check.actions), style="dim"),
+        )
+    console.print(f"  [bold]{module.name}[/bold] [dim]({module.key})[/dim]\n")
+    console.print(table)
+    console.print()
+    console.print(_indented("[dim]Run one on its own: [/dim][bold]--only <check>[/bold]\n"))
+
+
 def print_checking(modules: Sequence[Module]) -> None:
     """One line naming what step 1 settled on, above the permission picker."""
     names = ", ".join(module.name for module in modules)
@@ -236,8 +255,8 @@ def ask(
     )
 
 
-def confirm(question: str) -> bool:
-    return Confirm.ask(question, console=console, default=False)
+def confirm(question: str, *, default: bool = False) -> bool:
+    return Confirm.ask(question, console=console, default=default)
 
 
 def emit_template(text: str) -> None:
@@ -288,8 +307,12 @@ def print_next_steps(path: str) -> None:
         "    [cyan]3.[/cyan] Copy the [bold]RoleArn[/bold] output from the finished stack."
     )
     console.print(
-        "\n  [dim]The checks themselves aren't wired up yet. This release sets up the "
-        "permissions they'll run under.[/dim]"
+        "    [cyan]4.[/cyan] Scan with it:\n"
+        "       [bold]preflight scan --role-arn <the-RoleArn-output>[/bold]"
+    )
+    console.print(
+        "\n  [dim]Nothing here has touched AWS yet. The scan is the first step that does, "
+        "and it only reads.[/dim]"
     )
 
 
@@ -299,3 +322,213 @@ def print_error(message: str) -> None:
 
 def print_hint(message: str) -> None:
     console.print(f"[dim]  {message}[/dim]")
+
+
+# --- running a scan -------------------------------------------------------
+#
+# The scan half of the CLI has one job the generator half doesn't: it is
+# about to read somebody's account, so it says what it's going to read
+# before it does, and what it couldn't read afterwards.
+
+
+def print_target(account: str, identity: str, source: str) -> None:
+    """Whose account this is, and how we got in."""
+    console.print(_indented(f"[bold]Account[/bold] [cyan]{account}[/cyan]"))
+    console.print(_indented(f"[dim]as {identity}[/dim]"))
+    console.print(_indented(f"[dim]via {source}[/dim]\n"))
+
+
+def print_caution(warning: str, hint: str) -> None:
+    console.print(f"[yellow]![/yellow] {warning}")
+    print_hint(hint)
+    console.print()
+
+
+def print_plan(
+    modules: Sequence[Module],
+    checks: Sequence[Any],
+    regions: Sequence[str],
+    *,
+    lookback_days: int,
+    region_note: str | None = None,
+) -> None:
+    """Everything the scan is about to do, before it does any of it."""
+    table = Table(box=None, pad_edge=False, padding=(0, 2, 0, 0), header_style="dim")
+    table.add_column(" ", width=1)
+    table.add_column("Check", style="bold", no_wrap=True)
+    table.add_column("Looks for")
+    for check in checks:
+        table.add_row(Text("·", style="cyan"), Text(check.title), Text(check.looks_for))
+    console.print(table)
+    console.print()
+
+    # Everything the scan will read, not just what the checks read: the
+    # region list, last month's bill and the owner tags are calls too, and a
+    # plan that leaves them out isn't the whole plan.
+    support = sorted({action for module in modules for action in module.support_actions})
+    actions = sorted({action for check in checks for action in check.actions} | set(support))
+    services = sorted({action.split(":", 1)[0] for action in actions})
+    names = ", ".join(module.name for module in modules)
+    console.print(
+        _indented(
+            f"[dim]{names} · {len(checks)} checks · "
+            f"{len(actions)} read-only actions across {len(services)} services[/dim]"
+        )
+    )
+    console.print(
+        _indented(
+            f"[dim]{len(regions)} region{'' if len(regions) == 1 else 's'}: "
+            f"{', '.join(regions)}[/dim]"
+        )
+    )
+    console.print(_indented(f"[dim]Usage metrics over the last {lookback_days} days[/dim]"))
+    if support:
+        console.print(
+            _indented(
+                f"[dim]Plus {', '.join(support)} — for the region list, last "
+                "month's bill and owner names[/dim]"
+            )
+        )
+    console.print(
+        _indented("[dim]Get, List and Describe only. Nothing is written, nothing is sent.[/dim]\n")
+    )
+    if region_note:
+        print_hint(region_note + "\n")
+
+
+#: Status glyphs for a finished check, picked so the shape of the line tells
+#: you what happened before you've read the words.
+_MARKS = {
+    "clear": ("✓", "green", "dim"),
+    "found": ("●", "yellow", "bold"),
+    "skipped": ("-", "yellow", "dim"),
+    "failed": ("✗", "red", "dim"),
+}
+
+
+def print_check_result(title: str, outcome: Any) -> None:
+    """One line per finished check, as it finishes."""
+    if outcome.status == "skipped":
+        key, detail = "skipped", f"skipped — {outcome.reason}"
+    elif outcome.status == "failed":
+        key, detail = "failed", f"failed — {outcome.reason}"
+    elif outcome.findings:
+        key = "found"
+        detail = f"{len(outcome.findings)} to look at, of {outcome.examined} checked"
+    else:
+        key = "clear"
+        detail = f"nothing to flag, of {outcome.examined} checked"
+    glyph, glyph_style, title_style = _MARKS[key]
+    console.print(
+        Text.assemble(
+            ("  ", ""),
+            (glyph, glyph_style),
+            (" ", ""),
+            (title, title_style),
+            (f" — {detail}", "dim"),
+        )
+    )
+
+
+def scanning(message: str = "Reading the account") -> Any:
+    """A spinner for the long middle of a scan, on a terminal."""
+    return console.status(f"[dim]{message}…[/dim]", spinner="dots")
+
+
+def print_headline(result: Any) -> None:
+    """The number, and the three things to do about it."""
+    from preflight.core.report import money, percent, plural
+
+    console.print()
+    if not result.findings:
+        console.print(
+            Panel(
+                Text.assemble(
+                    ("✓ ", "bold green"),
+                    ("Nothing worth flagging\n", "bold"),
+                    (
+                        f"{result.examined} resources checked across "
+                        f"{len(result.regions)} {plural(len(result.regions), 'region')}",
+                        "dim",
+                    ),
+                ),
+                border_style="green",
+                padding=(0, 2),
+                expand=False,
+            )
+        )
+        console.print()
+        return
+
+    share = ""
+    if result.share_of_spend is not None:
+        share = f" · {percent(result.share_of_spend)} of last month's bill"
+    console.print(
+        Panel(
+            Text.assemble(
+                (f"{money(result.monthly_usd)}/month", "bold green"),
+                (f"  ·  {money(result.annual_usd)}/year{share}", "dim"),
+            ),
+            title="Estimated saving",
+            title_align="left",
+            border_style="green",
+            padding=(0, 2),
+            expand=False,
+        )
+    )
+    console.print()
+    counts = result.by_severity
+    console.print(
+        _indented(
+            f"[bold]{len(result.findings)}[/bold] findings "
+            f"[dim]({counts['high']} high, {counts['medium']} medium, "
+            f"{counts['low']} low) from {result.examined} resources[/dim]\n"
+        )
+    )
+
+    console.print("  [bold]Start here[/bold]")
+    for index, finding in enumerate(result.headline, start=1):
+        amount = money(finding.monthly_usd) if finding.monthly_usd is not None else "—"
+        console.print(
+            f"    [cyan]{index}.[/cyan] [bold]{finding.title}[/bold] [dim]({amount}/month)[/dim]"
+        )
+        console.print(f"       [dim]{finding.resource.label} · {finding.resource.region}[/dim]")
+    console.print()
+
+
+def print_gaps(result: Any) -> None:
+    """What the scan couldn't see, said out loud rather than left in the file."""
+    if not (result.skipped or result.failed or result.notes):
+        return
+    console.print("  [bold]What this scan couldn't see[/bold]")
+    for outcome in result.skipped:
+        console.print(f"    [yellow]-[/yellow] [dim]{outcome.check.title}: {outcome.reason}[/dim]")
+    for outcome in result.failed:
+        console.print(f"    [red]✗[/red] [dim]{outcome.check.title}: {outcome.reason}[/dim]")
+    for note in result.notes:
+        console.print(f"    [dim]· {note}[/dim]")
+    if result.missing_actions:
+        console.print(
+            f"\n  [dim]Missing: {', '.join(result.missing_actions)}[/dim]\n"
+            "  [dim]Regenerate a role with everything the checks need:[/dim]\n"
+            "    [bold]preflight scan --modules cost --save[/bold]"
+        )
+    console.print()
+
+
+def print_report_saved(paths: Mapping[str, Any]) -> None:
+    if not paths:
+        return
+    lines = [Text.assemble(("✓ ", "bold green"), ("Report saved", "bold"))]
+    for label, path in paths.items():
+        lines.append(Text.assemble((f"{label.upper():5}", "dim"), (f" {path}", "cyan")))
+    console.print(Panel(Text("\n").join(lines), border_style="green", padding=(0, 2), expand=False))
+    console.print()
+
+
+def print_scan_footer(seconds: float) -> None:
+    console.print(
+        f"  [dim]Read-only: every call was a Get, List or Describe. "
+        f"Finished in {seconds:.1f}s.[/dim]"
+    )
+    console.print("  [dim]Want a hand fixing these? [/dim]https://jetonecloud.com/book")

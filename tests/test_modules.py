@@ -103,3 +103,52 @@ def test_unknown_is_reported_before_not_available():
     """A typo and a coming-soon module together: the typo is the real mistake."""
     with pytest.raises(UnknownModuleError):
         resolve(["security", "nope"])
+
+
+# --- checks and the actions they declare ----------------------------------
+
+
+def test_every_available_module_has_checks():
+    for module in available_modules():
+        assert module.checks, f"{module.key} is marked available but runs nothing"
+
+
+def test_check_keys_are_unique_within_a_module():
+    for module in REGISTRY:
+        keys = [check.key for check in module.checks]
+        assert len(keys) == len(set(keys))
+
+
+def test_a_modules_permissions_are_exactly_what_its_checks_use():
+    """The role Preflight generates and the calls it makes can't drift.
+
+    `iam_actions` is what ends up in the deployed policy, and this is the
+    test that keeps it honest: every action is used by a check or declared
+    as module-level support, and nothing a check uses is missing from it.
+    """
+    for module in available_modules():
+        declared = set(module.iam_actions)
+        used = set(module.check_actions) | set(module.support_actions)
+        assert used - declared == set(), f"{module.key} calls actions it doesn't declare"
+        assert declared - used == set(), f"{module.key} asks for actions nothing uses"
+
+
+def test_every_check_action_is_read_only():
+    for module in REGISTRY:
+        for check in module.checks:
+            for action in check.actions:
+                assert is_read_only_action(action), f"{check.key} declares {action}"
+
+
+def test_checks_describe_themselves_in_plain_words():
+    for module in REGISTRY:
+        for check in module.checks:
+            assert check.title and check.title[0].isupper()
+            assert check.looks_for.endswith("."), f"{check.key}: looks_for reads as a sentence"
+
+
+def test_a_check_must_declare_at_least_one_action():
+    from preflight.modules.base import Check
+
+    with pytest.raises(ValueError, match="declares no actions"):
+        Check(key="empty", title="Empty", looks_for="nothing.", actions=(), run=lambda ctx: ())

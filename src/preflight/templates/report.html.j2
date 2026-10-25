@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Preflight {{ version }}">
+<meta name="robots" content="noindex, nofollow">
+<title>Preflight report — account {{ result.account.id }}</title>
+<style>
+  /* One file, no fetches: no fonts, no scripts, no images. A report you can
+     open on a plane, and one that can't tell anyone you opened it. */
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --rule: #e1e0d9;
+    --border: rgba(11, 11, 11, 0.10);
+    --accent: #2a78d6;
+    --good: #0ca30c;
+    --good-text: #006300;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --wash: rgba(11, 11, 11, 0.035);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --rule: #2c2c2a;
+      --border: rgba(255, 255, 255, 0.10);
+      --accent: #3987e5;
+      --good-text: #0ca30c;
+      --wash: rgba(255, 255, 255, 0.04);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --rule: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --good-text: #0ca30c;
+    --wash: rgba(255, 255, 255, 0.04);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.25rem 4rem;
+    background: var(--page);
+    color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 54rem; margin: 0 auto; }
+  h1, h2, h3, h4 { line-height: 1.25; margin: 0; font-weight: 600; }
+  h1 { font-size: 1.75rem; letter-spacing: -0.015em; }
+  h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
+  h3 { font-size: 1rem; }
+  p { margin: 0 0 0.75rem; }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { font-size: 0.875em; }
+  pre {
+    overflow-x: auto;
+    background: var(--wash);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-size: 0.8125rem;
+    margin: 0.5rem 0 0;
+  }
+
+  .masthead { border-bottom: 1px solid var(--rule); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  .wordmark {
+    font-size: 0.75rem; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 0.75rem;
+  }
+  .wordmark span { color: var(--muted); font-weight: 500; letter-spacing: 0.06em; }
+  .facts {
+    list-style: none; margin: 1rem 0 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 0.35rem 1.5rem;
+    font-size: 0.8125rem; color: var(--ink-2);
+  }
+  .facts b { font-weight: 600; color: var(--ink); }
+
+  .banner {
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    background: var(--wash); border-radius: 6px;
+    padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.875rem;
+  }
+  .banner.caution { border-left-color: var(--serious); }
+
+  section { margin-bottom: 2.5rem; }
+
+  /* Headline: exactly one hero figure on the page. */
+  .headline {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1.75rem;
+  }
+  .hero-label { font-size: 0.8125rem; color: var(--ink-2); margin-bottom: 0.25rem; }
+  .hero {
+    font-size: clamp(2.75rem, 9vw, 3.5rem); font-weight: 650;
+    letter-spacing: -0.03em; line-height: 1.05;
+  }
+  .hero-note { color: var(--ink-2); font-size: 0.9375rem; margin-top: 0.5rem; }
+  .tiles {
+    display: grid; gap: 1px; margin-top: 1.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    background: var(--rule); border: 1px solid var(--rule); border-radius: 8px;
+    overflow: hidden;
+  }
+  .tile { background: var(--surface); padding: 0.875rem 1rem; }
+  .tile dt { font-size: 0.75rem; color: var(--ink-2); margin-bottom: 0.2rem; }
+  .tile dd { margin: 0; font-size: 1.375rem; font-weight: 600; letter-spacing: -0.01em; }
+  .tile dd small { font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+
+  /* Severity: colour is the second signal, the word is the first. */
+  .pill {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 0.15rem 0.5rem; border-radius: 999px;
+    border: 1px solid var(--border); white-space: nowrap;
+  }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.critical { color: var(--critical); }
+  .pill.serious { color: var(--serious); }
+  .pill.warning { color: var(--warning); }
+  .pill.good { color: var(--good-text); }
+  .pill.plain { color: var(--ink-2); }
+  .pill.plain::before { display: none; }
+
+  .finding {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1.25rem; margin-bottom: 0.875rem;
+  }
+  .finding-head {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    justify-content: space-between; gap: 0.5rem 1rem;
+  }
+  .finding-head h3 { flex: 1 1 18rem; }
+  .amount { font-size: 1.125rem; font-weight: 650; white-space: nowrap; }
+  .amount small { font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; align-items: center;
+    margin-top: 0.5rem; font-size: 0.8125rem; color: var(--ink-2);
+  }
+  .meta code { color: var(--ink); }
+  .evidence { margin: 0.875rem 0 0; padding-left: 1.1rem; font-size: 0.9375rem; color: var(--ink-2); }
+  .evidence li { margin-bottom: 0.2rem; }
+  .basis {
+    margin-top: 0.875rem; padding-top: 0.75rem; border-top: 1px dashed var(--rule);
+    font-size: 0.8125rem; color: var(--muted);
+  }
+  .fix { margin-top: 0.75rem; font-size: 0.9375rem; }
+  .fix b { font-weight: 600; }
+
+  .start-here { counter-reset: step; }
+  .start-here .finding { border-left: 3px solid var(--accent); }
+  .start-here h3::before {
+    counter-increment: step; content: counter(step) ". ";
+    color: var(--accent); font-weight: 700;
+  }
+
+  .group-head {
+    display: flex; flex-wrap: wrap; justify-content: space-between;
+    align-items: baseline; gap: 0.5rem; margin: 1.75rem 0 0.75rem;
+  }
+  .group-head p { margin: 0; font-size: 0.8125rem; color: var(--ink-2); }
+
+  .scroller { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+  th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--rule); }
+  th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .notes { margin: 0; padding-left: 1.1rem; color: var(--ink-2); font-size: 0.9375rem; }
+  .notes li { margin-bottom: 0.35rem; }
+
+  footer {
+    border-top: 1px solid var(--rule); padding-top: 1.5rem;
+    font-size: 0.8125rem; color: var(--ink-2);
+  }
+  footer .cta { color: var(--ink); font-size: 0.9375rem; margin-bottom: 0.75rem; }
+
+  @media print {
+    body { background: #fff; padding: 0; font-size: 11pt; }
+    .finding, .headline, .tiles { break-inside: avoid; }
+    section { break-inside: auto; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+{% macro finding_card(finding, show_confidence=true) %}
+  <article class="finding">
+    <div class="finding-head">
+      <h3>{{ finding.title }}</h3>
+      {% if finding.monthly_usd is not none %}
+      <div class="amount">{{ finding.monthly_usd | money }}<small> /month</small></div>
+      {% endif %}
+    </div>
+    <div class="meta">
+      <span class="pill {{ severity_style[finding.level.value] }}">{{ finding.level.label }}</span>
+      {% if show_confidence %}
+      <span class="pill plain">{{ finding.confidence.label }} confidence</span>
+      {% endif %}
+      <code>{{ finding.resource.id }}</code>
+      <span>{{ finding.resource.region }}</span>
+      {% if finding.resource.name %}<span>&ldquo;{{ finding.resource.name }}&rdquo;</span>{% endif %}
+      {% if finding.resource.owner %}<span>owner: {{ finding.resource.owner }}</span>{% endif %}
+    </div>
+    <ul class="evidence">
+      {% for line in finding.evidence %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+    <p class="fix"><b>What to do:</b> {{ finding.recommendation }}</p>
+    {% if finding.estimate %}
+    <p class="basis">How the number was worked out: {{ finding.estimate.basis }}</p>
+    {% endif %}
+  </article>
+{% endmacro %}
+<main>
+
+<header class="masthead">
+  <div class="wordmark">Preflight <span>· read-only AWS audit by Jet1</span></div>
+  <h1>{% for module in result.modules %}{{ module.name }}{% if not loop.last %}, {% endif %}{% endfor %}</h1>
+  <ul class="facts">
+    <li>Account <b>{{ result.account.id }}</b></li>
+    <li>{{ result.regions | length }} {{ result.regions | length | plural("region") }}
+      {% if result.regions | length <= 6 %}<b>({{ result.regions | join(", ") }})</b>{% endif %}</li>
+    <li>Usage window <b>{{ result.lookback_days }} days</b></li>
+    <li>{{ generated_at }}</li>
+  </ul>
+</header>
+
+{% if result.demo %}
+<div class="banner caution">
+  <b>Sample data.</b> This report was generated by <code>preflight demo</code> from a
+  made-up account so you can see the shape of one. Nothing here was read from AWS.
+</div>
+{% endif %}
+
+{% if result.redacted %}
+<div class="banner">
+  <b>Redacted.</b> Account and resource identifiers have been replaced with stable
+  pseudonyms — the same resource keeps the same label throughout. The findings and
+  the arithmetic are unchanged.
+</div>
+{% endif %}
+
+<section class="headline">
+  <div class="hero-label">Estimated monthly saving</div>
+  <div class="hero">{{ result.monthly_usd | money }}</div>
+  <p class="hero-note">
+    {{ result.annual_usd | money }} a year
+    {%- if result.share_of_spend is not none %}, about
+    {{ result.share_of_spend | percent }} of your {{ result.spend.period }} bill
+    ({{ result.spend.total_usd | money }}){% endif %}.
+    {% if result.findings %}
+    {{ result.findings | length }} {{ result.findings | length | plural("finding") }},
+    from the {{ result.examined }} {{ result.examined | plural("resource") }} we looked at.
+    {% else %}
+    Nothing worth flagging turned up.
+    {% endif %}
+  </p>
+  <dl class="tiles">
+    <div class="tile">
+      <dt>Findings</dt>
+      <dd>{{ result.findings | length }}</dd>
+    </div>
+    <div class="tile">
+      <dt>High severity</dt>
+      <dd>{{ result.by_severity["high"] }}</dd>
+    </div>
+    <div class="tile">
+      <dt>Medium</dt>
+      <dd>{{ result.by_severity["medium"] }}</dd>
+    </div>
+    <div class="tile">
+      <dt>Low</dt>
+      <dd>{{ result.by_severity["low"] }}</dd>
+    </div>
+    <div class="tile">
+      <dt>Checks run</dt>
+      <dd>{{ result.ran | length }}<small> / {{ result.outcomes | length }}</small></dd>
+    </div>
+  </dl>
+</section>
+
+{% if result.headline %}
+<section class="start-here">
+  <h2>Start here</h2>
+  <p>The {{ result.headline | length }} worth doing first, by what they save.</p>
+  {% for finding in result.headline %}
+  {{ finding_card(finding, show_confidence=false) }}
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if groups %}
+<section>
+  <h2>Everything we found</h2>
+  {% for group in groups %}
+  <div class="group-head">
+    <h3>{{ group.check.title }}</h3>
+    <p>
+      {{ group.findings | length }} {{ group.findings | length | plural("finding") }}
+      · {{ group.monthly_usd | money }}/month
+      · looked at {{ group.outcome.examined }}
+    </p>
+  </div>
+  <p style="font-size:0.875rem;color:var(--ink-2);margin-top:-0.25rem">{{ group.check.looks_for }}</p>
+  {% for finding in group.findings %}
+  {{ finding_card(finding) }}
+  {% endfor %}
+  {% endfor %}
+</section>
+{% endif %}
+
+<section>
+  <h2>What was checked</h2>
+  <div class="scroller">
+    <table>
+      <thead>
+        <tr>
+          <th>Check</th>
+          <th>What it looks for</th>
+          <th class="num">Looked at</th>
+          <th class="num">Found</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for outcome in result.outcomes %}
+        <tr>
+          <td><b>{{ outcome.check.title }}</b></td>
+          <td>{{ outcome.check.looks_for }}</td>
+          <td class="num">{{ outcome.examined if outcome.status != "skipped" else "—" }}</td>
+          <td class="num">{{ outcome.findings | length if outcome.ran else "—" }}</td>
+          <td>
+            {% if outcome.clean %}<span class="pill good">clear</span>
+            {% elif outcome.ran %}{{ outcome.findings | length }} to look at
+            {% elif outcome.status == "skipped" %}<span class="pill warning">skipped</span>
+            {% else %}<span class="pill critical">failed</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if result.skipped or result.failed or result.notes %}
+<section>
+  <h2>What we couldn't see</h2>
+  <p>
+    Everything this scan couldn't read, so you can judge how complete the rest is.
+  </p>
+  {% if result.skipped %}
+  <ul class="notes">
+    {% for outcome in result.skipped %}
+    <li><b>{{ outcome.check.title }}</b> didn't run — {{ outcome.reason }}.</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if result.missing_actions %}
+  <p style="margin-top:0.75rem">
+    The role is missing {{ result.missing_actions | length }}
+    {{ result.missing_actions | length | plural("permission") }}:
+    {% for action in result.missing_actions %}<code>{{ action }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+    Regenerate it with every action the Cost Check needs:
+  </p>
+  <pre>preflight scan --modules cost --save</pre>
+  {% endif %}
+  {% if result.failed %}
+  <ul class="notes">
+    {% for outcome in result.failed %}
+    <li><b>{{ outcome.check.title }}</b> failed — {{ outcome.reason }}.</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if result.notes %}
+  <ul class="notes">
+    {% for note in result.notes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+
+<section>
+  <h2>How these numbers were worked out</h2>
+  <ul class="notes">
+    <li>
+      Every figure is a <b>list price</b> for <b>us-east-1</b>, the cheapest region for
+      everything priced here, reviewed {{ result.prices_reviewed }}. In any other region
+      the real saving is the same or larger.
+    </li>
+    <li>
+      Nothing accounts for Savings Plans, Reserved Instances, credits or private
+      pricing. If you have those, treat the figures as an upper bound on list and a
+      lower bound on effort.
+    </li>
+    <li>
+      Snapshots are billed incrementally, so they're costed at a third of their
+      volume's size rather than all of it.
+    </li>
+    <li>
+      Usage-based checks look back <b>{{ result.lookback_days }} days</b> and ignore
+      anything that hasn't existed for that long. CPU is a proxy for "busy", not a
+      measurement of it — check memory and disk before resizing anything.
+    </li>
+    <li>
+      Resources tagged <code>preflight:ignore</code> are skipped everywhere, so you
+      can silence a finding you've already decided about.
+    </li>
+    <li>
+      Preflight only ever made <code>Get</code>, <code>List</code> and
+      <code>Describe</code> calls to produce this. It cannot change anything in the
+      account, by construction.
+    </li>
+  </ul>
+</section>
+
+<footer>
+  <p class="cta">
+    Want a hand fixing these? <a href="https://jetonecloud.com/book">Book 20 minutes with an engineer</a>
+    — Jet1 is a managed DevOps team for startups that haven't hired one yet.
+  </p>
+  <p>
+    Generated by Preflight {{ version }} on {{ generated_at }} ·
+    scanned as <code>{{ result.account.arn }}</code> ·
+    {{ result.seconds | round(1) }}s ·
+    <a href="https://github.com/jetonecloud/preflight">github.com/jetonecloud/preflight</a>
+  </p>
+</footer>
+
+</main>
+</body>
+</html>

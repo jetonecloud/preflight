@@ -179,17 +179,19 @@ def test_empty_module_list_is_rejected():
     assert result.exit_code == 2
 
 
-def test_aws_options_are_acknowledged_as_inert(workdir):
-    result = invoke(
-        "scan",
-        "-m",
-        "cost",
-        "--save",
-        "--role-arn",
-        "arn:aws:iam::123456789012:role/PreflightReadOnlyRole",
-    )
+def test_region_without_credentials_still_generates_a_role(workdir):
+    """--region only means something for a scan; say so and carry on."""
+    result = invoke("scan", "-m", "cost", "--save", "--region", "us-east-1")
     assert result.exit_code == 0
-    assert "aren't wired up yet" in result.stderr
+    assert "--region only applies to a scan" in result.stderr
+    assert (workdir / DEFAULT_FILENAME).exists()
+
+
+def test_listing_checks_needs_no_credentials():
+    result = invoke("scan", "--list-checks")
+    assert result.exit_code == 0
+    assert "unattached-ebs-volumes" in result.stderr
+    assert "ec2:DescribeVolumes" in result.stderr
 
 
 # --- interactive ----------------------------------------------------------
