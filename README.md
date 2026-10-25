@@ -40,25 +40,59 @@ preflight scan --modules cost --save
 preflight scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole --region us-east-1
 ```
 
-Before it starts, Preflight lists what it's going to read. When it's done, you'll have an HTML report and a JSON export saved locally.
+Before it starts, Preflight lists every call it's going to make and asks before making any of them. When it's done, you'll have an HTML report and a JSON export saved locally, and the first three things worth fixing printed in your terminal. Leave `--region` off and it scans every region the account has enabled — waste tends to be in the region you've forgotten about.
 
-If you'd rather not create the role, you can scan with an existing profile:
+If you'd rather not create the role, you can scan with an existing profile, or with whatever credentials are already in the environment:
 
 ```sh
 preflight scan --profile my-profile --region us-east-1
+preflight scan --current           # CloudShell, env vars, an instance role
 ```
 
-Preflight checks whether that identity has write or admin access and will warn you if it does. We'd still recommend the dedicated role.
+Preflight will tell you when you're scanning as something broader than it needs — the root user especially — and recommend the dedicated role instead.
+
+## What the Cost Check looks for
+
+Nine checks, and what each one costs you:
+
+| Check | Looks for |
+|---|---|
+| Unattached EBS volumes | Disks attached to nothing, billed every hour |
+| Elastic IPs attached to nothing | Public IPv4 addresses you're renting and not using |
+| NAT gateways with no traffic | ~$33/month each, with nothing routing through them |
+| Load balancers with nothing behind them | No targets registered, or no requests at all |
+| Instances stopped for a month or more | Stopped instances whose EBS volumes are still billed |
+| Stopped RDS instances | Still charged for storage — and AWS restarts them after 7 days |
+| Snapshots nothing is using | Old snapshots whose volume is gone and which no AMI depends on |
+| Old manual database snapshots | Manual RDS snapshots nobody is going to restore |
+| Instances bigger than their workload | Running instances whose peak CPU never approaches what they're paying for |
+
+Every finding shows its own arithmetic — "500 GB of gp3 at $0.08/GB-month" — so you can check any figure yourself. Estimates use us-east-1 list prices, which are the lowest AWS charges, and ignore any Savings Plans or Reserved Instances you have; they're meant to be numbers you'd be comfortable defending, not the biggest ones we could justify.
+
+Checks keep quiet when they aren't sure. A volume detached three days ago is a migration in progress; a snapshot an AMI depends on is load-bearing; an instance with one busy hour a day is correctly sized. [`docs/cost-check.md`](docs/cost-check.md) has the full list of thresholds and guards.
+
+Already decided about something? Tag it `preflight:ignore` and no check will mention it again.
+
+```sh
+preflight scan --list-checks                      # the checks, and the permissions each needs
+preflight scan --role-arn <arn> --only idle-nat-gateways
+preflight scan --role-arn <arn> --days 30         # a longer look at usage
+preflight scan --role-arn <arn> --redact          # a report you can share without sharing your account
+```
 
 ## Permissions and your data
 
-The IAM policy in [`iam/policy.json`](iam/policy.json) only uses `Get`, `List`, and `Describe` actions, with no wildcards. Each module declares the actions it needs, so the role Preflight generates covers the checks you picked and nothing else — `preflight scan --list-modules` shows what each one asks for, and the permission picker lets you cut it down further by service. Nothing with a write verb or a wildcard can reach a generated policy; Preflight refuses to emit one.
+The IAM policy in [`iam/policy.json`](iam/policy.json) only uses `Get`, `List`, and `Describe` actions, with no wildcards. Each check declares the actions it needs, so the role Preflight generates covers the checks you picked and nothing else — `preflight scan --list-checks` shows exactly which call belongs to which check, and the permission picker lets you cut it down further by service. Nothing with a write verb or a wildcard can reach a generated policy; Preflight refuses to emit one.
+
+That declaration isn't just documentation. While a check runs, it's only allowed to make the calls it declared — anything else is a hard error rather than a quiet extra read — so the permissions you approved and the calls Preflight makes can't drift apart. If a permission is missing, the check that needed it is reported as **skipped**, naming the action, in the terminal and in the report. Nothing is quietly left out.
 
 Preflight uses the standard AWS credential chain (profiles, SSO, STS, assume-role). It never handles your keys directly and never sends credentials anywhere.
 
-By default, nothing leaves your machine. The one exception is opt-in: you can ask us to email you a copy of the report. If you do, Preflight sends a summary of scores and findings over HTTPS, optionally with account IDs and resource names redacted, after you confirm your email address with a magic link. Run `preflight preview` first to see exactly what would be sent. Raw API responses are never sent or stored.
+Nothing leaves your machine. A scan reads AWS and writes two local files, and that's all it does — there is no telemetry, no upload, and nothing to opt out of. If you want to share a report without sharing your account, `--redact` replaces every account and resource identifier with a stable pseudonym and leaves the findings and the arithmetic intact.
 
-The dollar figures in the report are estimates. We keep them on the conservative side, and each one shows how it was worked out.
+(Emailing yourself a copy of the report, and the `preflight preview` command that would show you the exact payload first, are planned and not built yet. `preflight preview` currently does nothing.)
+
+The dollar figures in the report are estimates. We keep them on the conservative side, and each one shows how it was worked out — see [`docs/cost-check.md`](docs/cost-check.md#how-the-money-is-worked-out).
 
 Releases are signed and come with checksums, so you can verify what you're running. [`SECURITY.md`](SECURITY.md) has the full details on data handling and our threat model.
 

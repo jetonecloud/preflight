@@ -15,12 +15,24 @@ from jinja2 import Environment, StrictUndefined
 
 from preflight import __version__
 from preflight.core.iam import collect_actions
-from preflight.modules import BASE_ACTIONS, Module
+
+# Imported from `modules.base` rather than the `modules` package: the package
+# imports the modules themselves, which import the scan machinery, which
+# imports this file to learn the role's name. Taking the declaration-only
+# module keeps that from being a cycle.
+from preflight.core.naming import DEFAULT_FILENAME, POLICY_NAME, ROLE_NAME
+from preflight.modules.base import BASE_ACTIONS, Module
 
 TEMPLATE_NAME = "role.cfn.yaml.j2"
-DEFAULT_FILENAME = "preflight-role.cfn.yaml"
-POLICY_NAME = "PreflightReadOnlyPolicy"
-ROLE_NAME = "PreflightReadOnlyRole"
+
+__all__ = [
+    "DEFAULT_FILENAME",
+    "POLICY_NAME",
+    "ROLE_NAME",
+    "TEMPLATE_NAME",
+    "regenerate_command",
+    "render_role_template",
+]
 
 
 def regenerate_command(modules: Sequence[Module], services: Sequence[str] | None = None) -> str:
