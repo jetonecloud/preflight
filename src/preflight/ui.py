@@ -547,6 +547,9 @@ def print_intro(result: Any, *, json_path: str | None, paged: bool, sections: in
 #: How to drive the pager, said the same way everywhere it's said.
 PAGER_KEYS = "Arrows to move, Enter for the next section, 'a' for all of it, q to quit"
 
+#: The same thing, short enough to sit on one line with the page count.
+PAGER_KEYS_SHORT = "Enter for the next, 'a' for all of it, q to quit"
+
 
 def show_report(result: Any, *, json_path: str | None = None, paged: bool | None = None) -> None:
     """Say what we found and where it went, then show the report itself."""
@@ -745,13 +748,21 @@ def _run_pager(pages: Sequence[Page]) -> None:
 def _draw_page(pages: Sequence[Page], index: int) -> None:
     _clear()
     page = pages[index]
-    console.print(
-        _indented(
-            f"[bold]{escape(page.title)}[/bold] [dim]- section {index + 1} of {len(pages)}[/dim]"
-        )
-    )
+    console.print(_indented(f"[bold]{escape(page.title)}[/bold]"))
     page.render()
-    console.print(_indented(f"[dim]{PAGER_KEYS}[/dim]"))
+    console.print(_indented(_page_footer(index, len(pages))))
+
+
+def _page_footer(index: int, total: int) -> str:
+    """Where you are and which way you can go, along the bottom of the page.
+
+    The arrows are lit only where there is somewhere to go, so the first and
+    last sections say as much without spending a word on it. ASCII, like the
+    rest of the report - a terminal that can't draw an arrow can draw these.
+    """
+    back = "[bold]<-[/bold]" if index > 0 else "[dim]<-[/dim]"
+    forward = "[bold]->[/bold]" if index < total - 1 else "[dim]->[/dim]"
+    return f"{back} {forward}  [dim]page {index + 1}/{total}  -  {PAGER_KEYS_SHORT}[/dim]"
 
 
 def _clear() -> None:

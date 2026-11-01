@@ -216,18 +216,39 @@ def test_enter_walks_forward_and_the_last_section_leaves(keypresses):
 def test_the_arrows_go_both_ways(keypresses):
     keypresses(ui.keys.RIGHT, ui.keys.LEFT, "q")
     text = page_through(paged_report())
-    assert text.count("section 1 of 7") == 2, "Left should have come back to the first section"
-    assert "section 2 of 7" in text
+    assert text.count("page 1/7") == 2, "Left should have come back to the first section"
+    assert "page 2/7" in text
 
 
 def test_up_and_down_drive_it_too(keypresses):
     keypresses(ui.keys.DOWN, ui.keys.UP, "q")
-    assert page_through(paged_report()).count("section 1 of 7") == 2
+    assert page_through(paged_report()).count("page 1/7") == 2
 
 
 def test_back_from_the_first_section_stays_put(keypresses):
     keypresses(ui.keys.LEFT, "q")
-    assert page_through(paged_report()).count("section 1 of 7") == 2
+    assert page_through(paged_report()).count("page 1/7") == 2
+
+
+def test_the_footer_shows_where_you_are_and_which_way_you_can_go(keypresses):
+    keypresses("q")
+    text = page_through(paged_report())
+    assert "<- ->" in text
+    assert "page 1/7" in text
+
+
+def test_the_arrows_point_only_where_there_is_somewhere_to_go():
+    total = 7
+    assert "[dim]<-[/dim] [bold]->[/bold]" in ui._page_footer(0, total)
+    assert "[bold]<-[/bold] [bold]->[/bold]" in ui._page_footer(3, total)
+    assert "[bold]<-[/bold] [dim]->[/dim]" in ui._page_footer(total - 1, total)
+    assert "page 7/7" in ui._page_footer(total - 1, total)
+
+
+def test_a_single_section_report_offers_no_arrows_at_all():
+    footer = ui._page_footer(0, 1)
+    assert "[bold]" not in footer
+    assert "page 1/1" in footer
 
 
 def test_q_leaves_without_reading_the_rest(keypresses):
