@@ -64,7 +64,7 @@ def _tokens(raw: str) -> list[str]:
 
 
 def _select(raw: str) -> tuple[Module, ...]:
-    """Turn picker input — numbers, keys, or `all` — into modules."""
+    """Turn picker input - numbers, keys, or `all` - into modules."""
     options = available_modules()
     wanted: list[str] = []
     for token in _tokens(raw):
@@ -95,7 +95,7 @@ def _quote(keys: tuple[str, ...]) -> str:
 
 
 def _abandoned() -> NoReturn:
-    """Nobody answered — say so, and point at the non-interactive route."""
+    """Nobody answered - say so, and point at the non-interactive route."""
     ui.console.print()
     ui.print_error("No answer given, so nothing was written.")
     ui.print_hint("In a script, skip the questions: preflight scan --modules cost --save")
@@ -311,34 +311,7 @@ def _write_template(path: Path, text: str, *, force: bool, interactive: bool) ->
         _fail(f"Couldn't write {path}: {exc.strerror or exc}")
 
 
-#: Report formats `--format` understands.
-FORMATS = ("html", "json")
-
 DEFAULT_LOOKBACK_DAYS = 14
-
-
-def _formats(raw: str) -> tuple[str, ...]:
-    wanted = [token.lower() for token in _tokens(raw)]
-    unknown = [token for token in wanted if token not in FORMATS]
-    if unknown:
-        _fail(
-            f"Don't know the format {_quote(tuple(unknown))}.",
-            f"Pick from: {', '.join(FORMATS)}.",
-            code=2,
-        )
-    if not wanted:
-        _fail("No report format selected.", f"Pick from: {', '.join(FORMATS)}.", code=2)
-    return tuple(dict.fromkeys(wanted))
-
-
-def _open_in_browser(path: Path) -> None:
-    """Best effort — a report that didn't open is not a failed scan."""
-    import webbrowser
-
-    try:
-        webbrowser.open(path.resolve().as_uri())
-    except Exception:  # noqa: BLE001
-        ui.print_hint(f"Couldn't open a browser. The report is at {path}.")
 
 
 def _short(path: Path) -> str:
@@ -349,41 +322,35 @@ def _short(path: Path) -> str:
         return str(path)
 
 
-def _deliver(result: Any, out: Path | None, formats: tuple[str, ...], show: bool) -> None:
-    """Write the report, say where it went, and show what's in it."""
+def _deliver(result: Any, out: Path | None, *, save_json: bool = True) -> None:
+    """Print the report, then write the JSON copy and say where it went."""
     from preflight.core import report
 
-    ui.print_headline(result)
-    ui.print_gaps(result)
-    paths = report.write(result, out or Path.cwd(), formats=formats)
-    ui.print_report_saved({label: _short(path) for label, path in paths.items()})
+    ui.print_report(result)
+    if save_json:
+        path = report.write(result, out or Path.cwd())
+        ui.print_report_saved(_short(path))
     ui.print_scan_footer(result.seconds)
-    if show and "html" in paths:
-        _open_in_browser(paths["html"])
 
 
 @app.command()
 def demo(
     out: Annotated[
         Path | None,
-        typer.Option("--out", "-o", help="Directory to write the sample report into."),
+        typer.Option("--out", "-o", help="Directory to write the sample JSON export into."),
     ] = None,
-    fmt: Annotated[
-        str,
-        typer.Option("--format", "-f", metavar="FORMATS", help="html, json, or both."),
-    ] = "html,json",
-    show: Annotated[
-        bool, typer.Option("--open", help="Open the report in your browser when it's written.")
+    no_json: Annotated[
+        bool,
+        typer.Option("--no-json", help="Print the sample report without writing the JSON export."),
     ] = False,
 ) -> None:
-    """Render a sample report, with no AWS account and no credentials.
+    """Print a sample report, with no AWS account and no credentials.
 
     The sample is produced by running the real checks against a made-up
-    account, so what you see is what the tool actually does — including the
+    account, so what you see is what the tool actually does - including the
     cases it deliberately stays quiet about.
     """
     ui.print_banner()
-    formats = _formats(fmt)
 
     from preflight import demo as sample
 
@@ -393,7 +360,7 @@ def demo(
     result = sample.build()
     for outcome in result.outcomes:
         ui.print_check_result(outcome.check.title, outcome)
-    _deliver(result, out, formats, show)
+    _deliver(result, out, save_json=not no_json)
 
 
 def _modules_for_scan(raw: str | None) -> tuple[Module, ...]:
@@ -466,12 +433,11 @@ def _audit(
     days: int,
     only: str | None,
     out: Path | None,
-    formats: tuple[str, ...],
+    save_json: bool,
     redact: bool,
     yes: bool,
-    show: bool,
 ) -> None:
-    """Read the account and write a report.
+    """Read the account and report on it.
 
     Everything up to the confirmation is free: resolving credentials and
     asking AWS who we are costs one `GetCallerIdentity`, and we show what
@@ -537,12 +503,12 @@ def _audit(
     try:
         with ui.scanning() as status:
             progress = ScanProgress(
-                on_check_start=lambda check: status.update(f"[dim]{check.title}…[/dim]"),
+                on_check_start=lambda check: status.update(f"[dim]{check.title}...[/dim]"),
                 on_check_done=lambda outcome: ui.print_check_result(outcome.check.title, outcome),
             )
             for module in selected:
                 outcomes.extend(run_module(ctx, module, progress=progress, only=wanted_checks))
-            status.update("[dim]Looking up last month's bill…[/dim]")
+            status.update("[dim]Looking up last month's bill...[/dim]")
             spend = _read_spend(session, selected, spend_reader)
     except aws.CredentialsError as exc:
         _fail(exc.message, exc.hint)
@@ -572,7 +538,7 @@ def _audit(
     )
     if redact:
         result = result.redact()
-    _deliver(result, out, formats, show)
+    _deliver(result, out, save_json=save_json)
 
 
 def _read_spend(session: Any, modules: tuple[Module, ...], reader: Any) -> Any:
@@ -615,7 +581,7 @@ def scan(
             "--out",
             "-o",
             help="Where to write: the role template's path, or the directory "
-            "the report goes in when you're scanning.",
+            "the JSON export goes in when you're scanning.",
             show_default=False,
         ),
     ] = None,
@@ -677,10 +643,10 @@ def scan(
     list_checks: Annotated[
         bool, typer.Option("--list-checks", help="List the individual checks and exit.")
     ] = False,
-    fmt: Annotated[
-        str,
-        typer.Option("--format", "-f", metavar="FORMATS", help="html, json, or both."),
-    ] = "html,json",
+    no_json: Annotated[
+        bool,
+        typer.Option("--no-json", help="Print the report without writing the JSON export."),
+    ] = False,
     redact: Annotated[
         bool,
         typer.Option(
@@ -691,9 +657,6 @@ def scan(
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Don't ask before reading the account.")
     ] = False,
-    open_report: Annotated[
-        bool, typer.Option("--open", help="Open the report in your browser when it's written.")
-    ] = False,
 ) -> None:
     """Generate the read-only IAM role, or scan an account with it.
 
@@ -702,7 +665,7 @@ def scan(
     the Get/List/Describe actions the modules you picked declare.
 
     Give it `--role-arn` (or `--profile`, or `--current`) and it runs the
-    checks instead, and writes you a report.
+    checks instead, and prints you a report.
     """
     ui.print_banner()
 
@@ -744,10 +707,9 @@ def scan(
             days=days,
             only=only,
             out=out,
-            formats=_formats(fmt),
+            save_json=not no_json,
             redact=redact,
             yes=yes,
-            show=open_report,
         )
         return
 
