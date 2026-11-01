@@ -323,13 +323,15 @@ def _short(path: Path) -> str:
 
 
 def _deliver(result: Any, out: Path | None, *, save_json: bool = True) -> None:
-    """Print the report, then write the JSON copy and say where it went."""
+    """Write the JSON copy, say what we found and where it went, then show it.
+
+    The file is written before anything is printed, so the line that names
+    it is a fact rather than an intention.
+    """
     from preflight.core import report
 
-    ui.print_report(result)
-    if save_json:
-        path = report.write(result, out or Path.cwd())
-        ui.print_report_saved(_short(path))
+    path = report.write(result, out or Path.cwd()) if save_json else None
+    ui.show_report(result, json_path=_short(path) if path else None)
     ui.print_scan_footer(result.seconds)
 
 
