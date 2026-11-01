@@ -3,6 +3,10 @@
 Everything the user reads goes to stderr; the only thing on stdout is output
 they might pipe somewhere, so `preflight scan -m cost --print > role.yaml`
 produces a clean file.
+
+The report itself is one of the things you read here: it is printed in full,
+in plain ASCII tables, so it survives a pipe into `less`, a copy into a
+ticket, and a terminal that has never heard of a box-drawing character.
 """
 
 from __future__ import annotations
@@ -10,7 +14,9 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
+from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
@@ -20,6 +26,10 @@ from rich.text import Text
 
 from preflight import __version__
 from preflight.modules import Module, ModuleStatus
+
+#: Every table and panel we draw. Rich's ASCII box uses `+`, `-` and `|`
+#: only, which is the whole point.
+BOX = box.ASCII
 
 #: Chrome, prompts, errors.
 console = Console(stderr=True, highlight=False)
@@ -41,7 +51,7 @@ def print_banner() -> None:
     """Short wordmark and version, on stderr."""
     console.print(Text(BANNER.strip("\n"), style="bold cyan"))
     console.print(
-        f"[dim] {TAGLINE} · v{__version__} · by[/dim] [cyan]Jet1[/cyan]\n",
+        f"[dim] {TAGLINE} - v{__version__} - by[/dim] [cyan]Jet1[/cyan]\n",
         highlight=False,
     )
 
@@ -58,14 +68,34 @@ def clear_screen() -> None:
     print_banner()
 
 
-def _indented(markup: str) -> Padding:
+def _indented(markup: str, *, indent: int = 2) -> Padding:
     """Markup indented so wrapped lines line up with the first one."""
-    return Padding(Text.from_markup(markup), (0, 0, 0, 2))
+    return Padding(Text.from_markup(markup), (0, 0, 0, indent), expand=False)
+
+
+def _hanging(marker: str, body: str, *, indent: int = 4) -> Padding:
+    """A marked line whose continuation lines line up under its text.
+
+    Two borderless columns rather than a literal prefix, so a long piece of
+    evidence wraps into a block instead of falling back to the left margin.
+    """
+    label = Text.from_markup(marker)
+    table = Table(box=None, show_header=False, pad_edge=False, padding=(0, 1, 0, 0))
+    table.add_column(width=label.cell_len, no_wrap=True)
+    table.add_column(overflow="fold")
+    table.add_row(label, Text.from_markup(body))
+    return Padding(table, (0, 0, 0, indent), expand=False)
 
 
 def print_step(number: int, total: int, title: str) -> None:
-    console.print(f"[cyan]┌──[/cyan] [bold]Step {number} of {total}[/bold] · {title}")
-    console.print("[cyan]└──────────────────────────────────────[/cyan]\n")
+    console.print(f"[cyan]+--[/cyan] [bold]Step {number} of {total}[/bold] - {title}")
+    console.print("[cyan]+--------------------------------------[/cyan]\n")
+
+
+def print_heading(title: str) -> None:
+    """A section heading in the report, underlined in ASCII."""
+    console.print(f"  [bold]{title}[/bold]")
+    console.print(f"  [dim]{'-' * len(title)}[/dim]")
 
 
 def modules_table(modules: Sequence[Module]) -> Table:
@@ -116,7 +146,7 @@ def permissions_table(
     """The permission picker: one checkbox per AWS service.
 
     `cursor` is the index of the highlighted row when the arrow-key picker is
-    driving — `len(groups)` being the Continue row below the services. Left as
+    driving - `len(groups)` being the Continue row below the services. Left as
     `None` the same table doubles as the read-only summary and the numbered
     fallback for terminals we can't read keypresses from.
     """
@@ -182,7 +212,7 @@ def print_permissions(
     total = sum(len(groups[service]) for service in groups if service in picked) + len(always)
     console.print(
         _indented(
-            f"[dim]{len(picked)} of {len(groups)} services · "
+            f"[dim]{len(picked)} of {len(groups)} services - "
             f"{total} read-only action{'' if total == 1 else 's'} in the role[/dim]\n"
         )
     )
@@ -260,7 +290,7 @@ def confirm(question: str, *, default: bool = False) -> bool:
 
 
 def emit_template(text: str) -> None:
-    """Write the template to stdout — highlighted for a terminal, raw for a pipe."""
+    """Write the template to stdout - highlighted for a terminal, raw for a pipe."""
     if payload.is_terminal:
         payload.print(Syntax(text, "yaml", background_color="default", word_wrap=False))
     else:
@@ -283,11 +313,12 @@ def print_saved(path: str, actions: Sequence[str]) -> None:
     console.print(
         Panel(
             Text.assemble(
-                ("✓ ", "bold green"),
+                ("OK ", "bold green"),
                 ("Saved the read-only role template\n", "bold"),
                 (path, "bold cyan"),
-                (f"  ·  {len(actions)} read-only actions", "dim"),
+                (f"  -  {len(actions)} read-only actions", "dim"),
             ),
+            box=BOX,
             border_style="green",
             padding=(0, 2),
             expand=False,
@@ -317,11 +348,11 @@ def print_next_steps(path: str) -> None:
 
 
 def print_error(message: str) -> None:
-    console.print(f"[red]✗[/red] {message}")
+    console.print(f"[red]x[/red] {message}")
 
 
 def print_hint(message: str) -> None:
-    console.print(f"[dim]  {message}[/dim]")
+    console.print(_indented(f"[dim]{escape(message)}[/dim]"))
 
 
 # --- running a scan -------------------------------------------------------
@@ -339,7 +370,7 @@ def print_target(account: str, identity: str, source: str) -> None:
 
 
 def print_caution(warning: str, hint: str) -> None:
-    console.print(f"[yellow]![/yellow] {warning}")
+    console.print(_hanging("[yellow]![/yellow]", escape(warning), indent=0))
     print_hint(hint)
     console.print()
 
@@ -358,7 +389,7 @@ def print_plan(
     table.add_column("Check", style="bold", no_wrap=True)
     table.add_column("Looks for")
     for check in checks:
-        table.add_row(Text("·", style="cyan"), Text(check.title), Text(check.looks_for))
+        table.add_row(Text("*", style="cyan"), Text(check.title), Text(check.looks_for))
     console.print(table)
     console.print()
 
@@ -371,7 +402,7 @@ def print_plan(
     names = ", ".join(module.name for module in modules)
     console.print(
         _indented(
-            f"[dim]{names} · {len(checks)} checks · "
+            f"[dim]{names} - {len(checks)} checks - "
             f"{len(actions)} read-only actions across {len(services)} services[/dim]"
         )
     )
@@ -385,7 +416,7 @@ def print_plan(
     if support:
         console.print(
             _indented(
-                f"[dim]Plus {', '.join(support)} — for the region list, last "
+                f"[dim]Plus {', '.join(support)} - for the region list, last "
                 "month's bill and owner names[/dim]"
             )
         )
@@ -399,19 +430,19 @@ def print_plan(
 #: Status glyphs for a finished check, picked so the shape of the line tells
 #: you what happened before you've read the words.
 _MARKS = {
-    "clear": ("✓", "green", "dim"),
-    "found": ("●", "yellow", "bold"),
+    "clear": ("+", "green", "dim"),
+    "found": ("!", "yellow", "bold"),
     "skipped": ("-", "yellow", "dim"),
-    "failed": ("✗", "red", "dim"),
+    "failed": ("x", "red", "dim"),
 }
 
 
 def print_check_result(title: str, outcome: Any) -> None:
     """One line per finished check, as it finishes."""
     if outcome.status == "skipped":
-        key, detail = "skipped", f"skipped — {outcome.reason}"
+        key, detail = "skipped", f"skipped - {outcome.reason}"
     elif outcome.status == "failed":
-        key, detail = "failed", f"failed — {outcome.reason}"
+        key, detail = "failed", f"failed - {outcome.reason}"
     elif outcome.findings:
         key = "found"
         detail = f"{len(outcome.findings)} to look at, of {outcome.examined} checked"
@@ -425,26 +456,80 @@ def print_check_result(title: str, outcome: Any) -> None:
             (glyph, glyph_style),
             (" ", ""),
             (title, title_style),
-            (f" — {detail}", "dim"),
+            (f" - {detail}", "dim"),
         )
     )
 
 
 def scanning(message: str = "Reading the account") -> Any:
     """A spinner for the long middle of a scan, on a terminal."""
-    return console.status(f"[dim]{message}…[/dim]", spinner="dots")
+    return console.status(f"[dim]{message}...[/dim]", spinner="dots")
+
+
+# --- the report -----------------------------------------------------------
+#
+# The report is the terminal. There is no file to open and no browser in the
+# loop: everything a reader needs is printed here, in ASCII, and the JSON
+# written alongside it is the same thing for a machine to read.
+
+
+def print_report(result: Any) -> None:
+    """The whole report, top to bottom."""
+    print_report_header(result)
+    print_headline(result)
+    print_start_here(result)
+    print_findings(result)
+    print_checked(result)
+    print_gaps(result)
+    print_method(result)
+
+
+def print_report_header(result: Any) -> None:
+    """What this report is of: the account, the regions, the window."""
+    from preflight.core.report import plural
+
+    names = ", ".join(module.name for module in result.modules)
+    console.print()
+    print_heading(names)
+    regions = f"{len(result.regions)} {plural(len(result.regions), 'region')}"
+    if len(result.regions) <= 6:
+        regions += f" ({', '.join(result.regions)})"
+    console.print(
+        _indented(
+            f"[dim]Account[/dim] [cyan]{result.account.id}[/cyan] [dim]- {regions} - "
+            f"{result.lookback_days}-day usage window[/dim]"
+        )
+    )
+    console.print(
+        _indented(
+            f"[dim]{result.finished_at.strftime('%d %B %Y at %H:%M UTC')} - "
+            f"preflight {result.version}[/dim]"
+        )
+    )
+    console.print()
+    if result.demo:
+        print_caution(
+            "Sample data.",
+            "This report came from a made-up account so you can see the shape "
+            "of one. Nothing here was read from AWS.",
+        )
+    if result.redacted:
+        print_hint(
+            "Redacted: account and resource identifiers have been replaced with "
+            "stable pseudonyms. The same resource keeps the same label throughout, "
+            "and the arithmetic is unchanged.\n"
+        )
 
 
 def print_headline(result: Any) -> None:
-    """The number, and the three things to do about it."""
+    """The number, and what it's made of."""
     from preflight.core.report import money, percent, plural
 
-    console.print()
     if not result.findings:
         console.print(
             Panel(
                 Text.assemble(
-                    ("✓ ", "bold green"),
+                    ("OK ", "bold green"),
                     ("Nothing worth flagging\n", "bold"),
                     (
                         f"{result.examined} resources checked across "
@@ -452,6 +537,7 @@ def print_headline(result: Any) -> None:
                         "dim",
                     ),
                 ),
+                box=BOX,
                 border_style="green",
                 padding=(0, 2),
                 expand=False,
@@ -462,37 +548,191 @@ def print_headline(result: Any) -> None:
 
     share = ""
     if result.share_of_spend is not None:
-        share = f" · {percent(result.share_of_spend)} of last month's bill"
+        share = f" - {percent(result.share_of_spend)} of last month's bill"
     console.print(
         Panel(
             Text.assemble(
                 (f"{money(result.monthly_usd)}/month", "bold green"),
-                (f"  ·  {money(result.annual_usd)}/year{share}", "dim"),
+                (f"  -  {money(result.annual_usd)}/year{share}", "dim"),
             ),
             title="Estimated saving",
             title_align="left",
+            box=BOX,
             border_style="green",
             padding=(0, 2),
             expand=False,
         )
     )
     console.print()
+
     counts = result.by_severity
+    table = Table(box=BOX, header_style="dim", border_style="dim")
+    for column in ("Findings", "High", "Medium", "Low", "Checks run", "Resources"):
+        table.add_column(column, justify="right")
+    table.add_row(
+        Text(str(len(result.findings)), style="bold"),
+        Text(str(counts["high"]), style="red" if counts["high"] else "dim"),
+        Text(str(counts["medium"]), style="yellow" if counts["medium"] else "dim"),
+        Text(str(counts["low"]), style="cyan" if counts["low"] else "dim"),
+        Text(f"{len(result.ran)} of {len(result.outcomes)}"),
+        Text(str(result.examined)),
+    )
+    console.print(Padding(table, (0, 0, 0, 2), expand=False))
+    console.print()
+
+
+def print_start_here(result: Any) -> None:
+    """The first few things to fix, ahead of the full list."""
+    from preflight.core.report import money
+
+    if not result.headline:
+        return
+    print_heading("Start here")
     console.print(
-        _indented(
-            f"[bold]{len(result.findings)}[/bold] findings "
-            f"[dim]({counts['high']} high, {counts['medium']} medium, "
-            f"{counts['low']} low) from {result.examined} resources[/dim]\n"
+        _indented(f"[dim]The {len(result.headline)} worth doing first, by what they save.[/dim]")
+    )
+    console.print()
+    for index, finding in enumerate(result.headline, start=1):
+        console.print(
+            _hanging(
+                f"[cyan]{index}.[/cyan]",
+                f"[bold]{escape(finding.title)}[/bold] "
+                f"[dim]({money(finding.monthly_usd)}/month)[/dim]",
+            )
+        )
+        console.print(
+            _indented(
+                f"[dim]{escape(finding.resource.label)} - {finding.resource.region}[/dim]",
+                indent=7,
+            )
+        )
+        console.print(_indented(escape(finding.recommendation), indent=7))
+    console.print()
+
+
+def print_findings(result: Any) -> None:
+    """Every finding: an index table, then the evidence behind each line."""
+    from preflight.core.report import money, plural
+
+    groups = result.groups()
+    if not groups:
+        return
+
+    ordered = [finding for group in groups for finding in group["findings"]]
+    print_heading("Everything we found")
+    console.print()
+
+    table = Table(box=BOX, header_style="dim", border_style="dim")
+    table.add_column("#", justify="right", width=3)
+    table.add_column("Check", no_wrap=True)
+    table.add_column("Resource", style="bold", overflow="fold")
+    table.add_column("Region", no_wrap=True)
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("$/month", justify="right", no_wrap=True)
+    for index, finding in enumerate(ordered, start=1):
+        table.add_row(
+            Text(str(index), style="cyan"),
+            Text(finding.check),
+            Text(finding.resource.label),
+            Text(finding.resource.region),
+            _severity(finding),
+            Text(money(finding.monthly_usd)),
+        )
+    console.print(Padding(table, (0, 0, 0, 2), expand=False))
+    console.print()
+
+    number = 0
+    for group in groups:
+        count = len(group["findings"])
+        console.print(
+            _indented(
+                f"[bold]{group['check'].title}[/bold] "
+                f"[dim]- {count} {plural(count, 'finding')} - "
+                f"{money(group['monthly_usd'])}/month - "
+                f"looked at {group['outcome'].examined}[/dim]"
+            )
+        )
+        console.print(_indented(f"[dim]{group['check'].looks_for}[/dim]"))
+        console.print()
+        for finding in group["findings"]:
+            number += 1
+            _print_finding(number, finding)
+    console.print()
+
+
+def _severity(finding: Any) -> Text:
+    from preflight.core.report import SEVERITY_STYLE
+
+    return Text(finding.level.label, style=SEVERITY_STYLE[finding.level.value])
+
+
+def _print_finding(number: int, finding: Any) -> None:
+    """One finding in full: what it is, the evidence, and what to do."""
+    from preflight.core.report import money
+
+    resource = finding.resource
+    console.print(
+        _hanging(
+            f"[cyan]\\[{number}][/cyan]",
+            f"[bold]{escape(finding.title)}[/bold] "
+            f"[bold green]{money(finding.monthly_usd)}/month[/bold green]",
         )
     )
-
-    console.print("  [bold]Start here[/bold]")
-    for index, finding in enumerate(result.headline, start=1):
-        amount = money(finding.monthly_usd) if finding.monthly_usd is not None else "—"
+    meta = [
+        finding.level.label + " severity",
+        finding.confidence.label + " confidence",
+        resource.id,
+        resource.region,
+    ]
+    if resource.name:
+        meta.append(f'"{resource.name}"')
+    if resource.owner:
+        meta.append(f"owner: {resource.owner}")
+    console.print(_indented(f"[dim]{escape(' - '.join(meta))}[/dim]", indent=8))
+    for line in finding.evidence:
+        console.print(_hanging("[dim]*[/dim]", escape(line), indent=8))
+    console.print(_indented(f"[bold]What to do:[/bold] {escape(finding.recommendation)}", indent=8))
+    if finding.estimate:
         console.print(
-            f"    [cyan]{index}.[/cyan] [bold]{finding.title}[/bold] [dim]({amount}/month)[/dim]"
+            _indented(
+                f"[dim]How the number was worked out: {escape(finding.estimate.basis)}[/dim]",
+                indent=8,
+            )
         )
-        console.print(f"       [dim]{finding.resource.label} · {finding.resource.region}[/dim]")
+    console.print()
+
+
+def print_checked(result: Any) -> None:
+    """Every check that ran, found nothing, or couldn't run."""
+    from preflight.core.report import UNKNOWN
+
+    if not result.outcomes:
+        return
+    print_heading("What was checked")
+    console.print()
+    table = Table(box=BOX, header_style="dim", border_style="dim")
+    table.add_column("Check", style="bold", no_wrap=True)
+    table.add_column("What it looks for", overflow="fold")
+    table.add_column("Looked at", justify="right", no_wrap=True)
+    table.add_column("Found", justify="right", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    for outcome in result.outcomes:
+        if outcome.clean:
+            status = Text("clear", style="green")
+        elif outcome.ran:
+            status = Text(f"{len(outcome.findings)} to look at", style="yellow")
+        elif outcome.status == "skipped":
+            status = Text("skipped", style="yellow")
+        else:
+            status = Text("failed", style="red")
+        table.add_row(
+            Text(outcome.check.title),
+            Text(outcome.check.looks_for),
+            Text(str(outcome.examined) if outcome.status != "skipped" else UNKNOWN),
+            Text(str(len(outcome.findings)) if outcome.ran else UNKNOWN),
+            status,
+        )
+    console.print(Padding(table, (0, 0, 0, 2), expand=False))
     console.print()
 
 
@@ -500,13 +740,21 @@ def print_gaps(result: Any) -> None:
     """What the scan couldn't see, said out loud rather than left in the file."""
     if not (result.skipped or result.failed or result.notes):
         return
-    console.print("  [bold]What this scan couldn't see[/bold]")
+    print_heading("What this scan couldn't see")
+    console.print(_indented("[dim]So you can judge how complete the rest of it is.[/dim]"))
+    console.print()
     for outcome in result.skipped:
-        console.print(f"    [yellow]-[/yellow] [dim]{outcome.check.title}: {outcome.reason}[/dim]")
+        console.print(
+            _hanging(
+                "[yellow]-[/yellow]", f"[dim]{escape(outcome.check.title)}: {outcome.reason}[/dim]"
+            )
+        )
     for outcome in result.failed:
-        console.print(f"    [red]✗[/red] [dim]{outcome.check.title}: {outcome.reason}[/dim]")
+        console.print(
+            _hanging("[red]x[/red]", f"[dim]{escape(outcome.check.title)}: {outcome.reason}[/dim]")
+        )
     for note in result.notes:
-        console.print(f"    [dim]· {note}[/dim]")
+        console.print(_hanging("[dim]*[/dim]", f"[dim]{escape(note)}[/dim]"))
     if result.missing_actions:
         console.print(
             f"\n  [dim]Missing: {', '.join(result.missing_actions)}[/dim]\n"
@@ -516,13 +764,51 @@ def print_gaps(result: Any) -> None:
     console.print()
 
 
-def print_report_saved(paths: Mapping[str, Any]) -> None:
-    if not paths:
-        return
-    lines = [Text.assemble(("✓ ", "bold green"), ("Report saved", "bold"))]
-    for label, path in paths.items():
-        lines.append(Text.assemble((f"{label.upper():5}", "dim"), (f" {path}", "cyan")))
-    console.print(Panel(Text("\n").join(lines), border_style="green", padding=(0, 2), expand=False))
+def print_method(result: Any) -> None:
+    """The arithmetic, stated rather than implied.
+
+    Printed with every report, because a number you can't check is a number
+    you shouldn't trust.
+    """
+    print_heading("How these numbers were worked out")
+    notes = (
+        "Every figure is a list price for us-east-1, the cheapest region for "
+        f"everything priced here, reviewed {result.prices_reviewed}. In any "
+        "other region the real saving is the same or larger.",
+        "Nothing accounts for Savings Plans, Reserved Instances, credits or "
+        "private pricing. If you have those, treat the figures as an upper "
+        "bound on list and a lower bound on effort.",
+        "Snapshots are billed incrementally, so they're costed at a third of "
+        "their volume's size rather than all of it.",
+        f"Usage-based checks look back {result.lookback_days} days and ignore "
+        "anything that hasn't existed for that long. CPU is a proxy for "
+        '"busy", not a measurement of it - check memory and disk before '
+        "resizing anything.",
+        "Resources tagged preflight:ignore are skipped everywhere, so you can "
+        "silence a finding you've already decided about.",
+        "Preflight only ever made Get, List and Describe calls to produce "
+        "this. It cannot change anything in the account, by construction.",
+    )
+    for note in notes:
+        console.print(_hanging("[dim]*[/dim]", f"[dim]{note}[/dim]"))
+    console.print()
+
+
+def print_report_saved(path: Any) -> None:
+    """Where the machine-readable copy went."""
+    console.print(
+        Panel(
+            Text.assemble(
+                ("OK ", "bold green"),
+                ("JSON export saved\n", "bold"),
+                (str(path), "cyan"),
+            ),
+            box=BOX,
+            border_style="green",
+            padding=(0, 2),
+            expand=False,
+        )
+    )
     console.print()
 
 
