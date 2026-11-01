@@ -40,7 +40,7 @@ preflight scan --modules cost --save
 preflight scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole --region us-east-1
 ```
 
-Before it starts, Preflight lists every call it's going to make and asks before making any of them. When it's done, the whole report is printed in your terminal — plain ASCII tables, no colours required — and a JSON export of the same thing is saved next to you. `--no-json` skips the file if you only want the terminal copy. Leave `--region` off and it scans every region the account has enabled — waste tends to be in the region you've forgotten about.
+Before it starts, Preflight lists every call it's going to make and asks before making any of them. When it's done it tells you what it found, where the JSON export went, and then shows you the report itself — a section at a time, arrow keys to move between them, `a` to print the whole thing at once and `q` to leave. Plain ASCII tables, no colours required. Down a pipe or in CI there's nothing to press: every section is printed in order. `--no-json` skips the file if you only want the terminal copy. Leave `--region` off and it scans every region the account has enabled — waste tends to be in the region you've forgotten about.
 
 If you'd rather not create the role, you can scan with an existing profile, or with whatever credentials are already in the environment:
 

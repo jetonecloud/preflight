@@ -24,7 +24,9 @@ export of it lands in the current directory.
 ## Getting the report out
 
 The report is terminal output, so selecting it and copying it works — it is
-plain ASCII, so it pastes into a ticket or an email unchanged.
+plain ASCII, so it pastes into a ticket or an email unchanged. It is shown a
+section at a time; press `a` to print the whole thing at once if you want it
+all in the scrollback to copy.
 
 For the JSON, CloudShell has a file download built in: **Actions → Download
 file**, then give it the export's name — something like

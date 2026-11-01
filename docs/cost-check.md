@@ -154,6 +154,14 @@ preflight scan --role-arn <arn> --yes --out ./audits
 With no `--region`, every region the account has enabled is scanned — waste
 tends to be in the region you've forgotten about.
 
+## Reading the report
+
+The report is printed where you ran the command, a section at a time. Arrow
+keys move between sections, Enter goes forward, `a` prints the whole thing
+at once — useful when you want it in the scrollback to search or copy — and
+`q` leaves. Piped or redirected, there's nothing to press: every section is
+printed in order.
+
 ## The JSON
 
 Every scan writes a stable, versioned document (`schema_version: 1`)
