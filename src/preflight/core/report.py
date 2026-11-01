@@ -1,23 +1,19 @@
 """The thing you actually keep: one scan, written down.
 
-`ScanResult` is the whole output of a scan — what was read, what was found,
-what couldn't be read and why — and it renders to exactly two formats. The
-JSON is the stable one, versioned, meant to be diffed between scans or fed
-to something else. The HTML is the one you send to someone.
+`ScanResult` is the whole output of a scan - what was read, what was found,
+what couldn't be read and why. The report you read is printed in the
+terminal, in plain ASCII tables; the JSON written next to it is the stable
+one, versioned, meant to be diffed between scans or fed to something else.
 
-Both are built from the same object, so they can't disagree, and the HTML is
-a single self-contained file with no fonts, scripts or images to fetch. You
-can email it, open it on a plane, or print it to PDF, and nothing about it
-phones home.
+Both come off the same object, so they can't disagree, and neither fetches
+anything: no fonts, no scripts, nothing that phones home.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from importlib import resources
 from typing import TYPE_CHECKING, Any
 
 from preflight import __version__
@@ -41,8 +37,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: Bump this when the JSON changes shape in a way a reader would notice.
 #: Added fields don't count; renamed or removed ones do.
 SCHEMA_VERSION = 1
-
-TEMPLATE_NAME = "report.html.j2"
 
 #: How many findings the report leads with. Three is the product: the first
 #: three things to fix, not a list of ninety things to feel bad about.
@@ -136,7 +130,7 @@ class ScanResult:
 
     @property
     def clean(self) -> tuple[CheckOutcome, ...]:
-        """Checks that ran and found nothing — the good news, and worth showing."""
+        """Checks that ran and found nothing - the good news, and worth showing."""
         return tuple(outcome for outcome in self.outcomes if outcome.clean)
 
     @property
@@ -193,7 +187,7 @@ class ScanResult:
         """The same report with the account scrubbed out of it."""
         redactor = Redactor(True, account_id=self.account.id)
         # Redact once, through the outcomes, then derive the flat list from
-        # them — so a finding can't end up with one pseudonym in the headline
+        # them - so a finding can't end up with one pseudonym in the headline
         # and another in its section.
         outcomes = tuple(
             replace(
@@ -268,21 +262,21 @@ class ScanResult:
         """Pretty by default: this file gets opened by people, not just tools."""
         return json.dumps(self.to_dict(), indent=indent, sort_keys=False) + "\n"
 
-    def to_html(self) -> str:
-        return render_html(self)
-
 
 def _iso(moment: datetime) -> str:
     return moment.isoformat(timespec="seconds")
 
 
-# --- presentation helpers (shared by the HTML and the terminal) -----------
+# --- presentation helpers (used by the terminal report) -------------------
+
+#: What an unknown number looks like. ASCII, like everything else we print.
+UNKNOWN = "-"
 
 
 def money(amount: float | None, *, precise: bool = False) -> str:
     """`$1,284` for anything substantial, `$3.65` when the cents matter."""
     if amount is None:
-        return "—"
+        return UNKNOWN
     if precise or abs(amount) < 10:
         return f"${amount:,.2f}"
     return f"${amount:,.0f}"
@@ -290,7 +284,7 @@ def money(amount: float | None, *, precise: bool = False) -> str:
 
 def percent(fraction: float | None) -> str:
     if fraction is None:
-        return "—"
+        return UNKNOWN
     if fraction < 0.01:
         return "under 1%"
     return f"{fraction:.0%}"
@@ -300,66 +294,21 @@ def plural(count: int, singular: str, many: str | None = None) -> str:
     return singular if count == 1 else (many or f"{singular}s")
 
 
-#: Severity to the status palette. Each one is always drawn with its word
-#: next to it — the colour is the second signal, never the only one.
+#: Severity to a terminal colour. Each one is always drawn with its word
+#: next to it - the colour is the second signal, never the only one.
 SEVERITY_STYLE: dict[str, str] = {
-    Severity.HIGH.value: "critical",
-    Severity.MEDIUM.value: "serious",
-    Severity.LOW.value: "warning",
+    Severity.HIGH.value: "red",
+    Severity.MEDIUM.value: "yellow",
+    Severity.LOW.value: "cyan",
 }
 
 
-def render_html(result: ScanResult) -> str:
-    """Render the standalone HTML report."""
-    from jinja2 import Environment, StrictUndefined, select_autoescape
-
-    env = Environment(
-        autoescape=select_autoescape(default_for_string=True, default=True),
-        trim_blocks=True,
-        lstrip_blocks=True,
-        undefined=StrictUndefined,
-        keep_trailing_newline=True,
-    )
-    env.filters["money"] = money
-    env.filters["percent"] = percent
-    env.filters["plural"] = plural
-    template = env.from_string(_load_template())
-    return template.render(
-        result=result,
-        groups=result.groups(),
-        severity_style=SEVERITY_STYLE,
-        generated_at=result.finished_at.strftime("%d %B %Y at %H:%M UTC"),
-        version=result.version,
-    )
-
-
-def _load_template() -> str:
-    return (
-        resources.files("preflight")
-        .joinpath("templates", TEMPLATE_NAME)
-        .read_text(encoding="utf-8")
-    )
-
-
-def write(
-    result: ScanResult,
-    directory: Any,
-    *,
-    formats: Sequence[str] = ("html", "json"),
-) -> dict[str, Any]:
-    """Write the report into `directory`, returning the paths by format."""
+def write(result: ScanResult, directory: Any) -> Any:
+    """Write the JSON export into `directory`, returning the path."""
     from pathlib import Path
 
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    stem = result.filename_stem()
-    written: dict[str, Any] = {}
-    if "html" in formats:
-        path = directory / f"{stem}.html"
-        path.write_text(result.to_html(), encoding="utf-8")
-        written["html"] = path
-    if "json" in formats:
-        path = directory / f"{stem}.json"
-        path.write_text(result.to_json(), encoding="utf-8")
-        written["json"] = path
-    return written
+    path = directory / f"{result.filename_stem()}.json"
+    path.write_text(result.to_json(), encoding="utf-8")
+    return path

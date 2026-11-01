@@ -40,7 +40,6 @@ dmypy.json
 # Preflight output (never commit scan output — may contain account-identifying data)
 reports/
 *.preflight.json
-*.preflight.html
 preflight-report-*
 
 # AWS / secrets — defense in depth, these must never exist in this repo
