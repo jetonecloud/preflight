@@ -57,17 +57,19 @@ def reports(directory):
 # --- the happy path -------------------------------------------------------
 
 
-def test_a_scan_writes_both_reports_and_summarises_them(workdir, sample_account):
+def test_a_scan_prints_the_report_and_writes_the_json(workdir, sample_account):
     result = invoke("scan", "--role-arn", ROLE, "--yes")
     assert result.exit_code == 0, result.stderr
 
     assert "Estimated saving" in result.stderr
     assert "Start here" in result.stderr
-    assert "Report saved" in result.stderr
+    assert "Everything we found" in result.stderr
+    assert "What was checked" in result.stderr
+    assert "How these numbers were worked out" in result.stderr
+    assert "JSON export saved" in result.stderr
     written = reports(workdir)
-    assert len(written) == 2
-    assert any(name.endswith(".html") for name in written)
-    assert any(name.endswith(".json") for name in written)
+    assert len(written) == 1
+    assert written[0].endswith(".json")
 
 
 def test_the_plan_is_shown_before_anything_is_read(workdir, sample_account):
@@ -132,7 +134,7 @@ def test_saying_yes_goes_ahead(workdir, sample_account, monkeypatch):
     monkeypatch.setattr("preflight.cli._interactive", lambda: True)
     result = invoke("scan", "--role-arn", ROLE, input="y\n")
     assert result.exit_code == 0
-    assert len(reports(workdir)) == 2
+    assert len(reports(workdir)) == 1
 
 
 def test_without_a_terminal_it_says_it_is_going_ahead(workdir, sample_account):
@@ -165,21 +167,17 @@ def test_redaction_reaches_the_files(workdir, sample_account):
     assert any("<account>" in name for name in reports(workdir))
 
 
-def test_a_single_format_writes_a_single_file(workdir, sample_account):
-    invoke("scan", "--role-arn", ROLE, "--format", "json", "--yes")
-    assert all(name.endswith(".json") for name in reports(workdir))
+def test_the_json_export_can_be_turned_off(workdir, sample_account):
+    result = invoke("scan", "--role-arn", ROLE, "--no-json", "--yes")
+    assert result.exit_code == 0
+    assert "Estimated saving" in result.stderr
+    assert reports(workdir) == []
 
 
-def test_an_unknown_format_is_rejected(workdir, sample_account):
-    result = invoke("scan", "--role-arn", ROLE, "--format", "pdf", "--yes")
-    assert result.exit_code == 2
-    assert "Don't know the format 'pdf'" in result.stderr
-
-
-def test_reports_can_be_written_somewhere_else(workdir, sample_account):
+def test_the_json_export_can_be_written_somewhere_else(workdir, sample_account):
     target = workdir / "audits" / "june"
     invoke("scan", "--role-arn", ROLE, "--out", str(target), "--yes")
-    assert len(reports(target)) == 2
+    assert len(reports(target)) == 1
     assert reports(workdir) == []
 
 
@@ -283,11 +281,12 @@ def test_a_missing_permission_is_reported_with_the_fix(workdir, monkeypatch):
 # --- demo -----------------------------------------------------------------
 
 
-def test_demo_writes_a_sample_report(workdir):
+def test_demo_prints_a_sample_report(workdir):
     result = invoke("demo")
     assert result.exit_code == 0
     assert "Sample data" in result.stderr
-    assert len(reports(workdir)) == 2
+    assert "Everything we found" in result.stderr
+    assert len(reports(workdir)) == 1
 
 
 def test_demo_needs_no_credentials(workdir, monkeypatch):
@@ -300,9 +299,12 @@ def test_demo_needs_no_credentials(workdir, monkeypatch):
 
 def test_demo_honours_the_output_options(workdir):
     target = workdir / "samples"
-    result = invoke("demo", "--out", str(target), "--format", "html")
+    result = invoke("demo", "--out", str(target))
     assert result.exit_code == 0
-    assert all(name.endswith(".html") for name in reports(target))
+    assert all(name.endswith(".json") for name in reports(target))
+
+    assert invoke("demo", "--no-json").exit_code == 0
+    assert reports(workdir) == []
 
 
 # --- a clean account ------------------------------------------------------

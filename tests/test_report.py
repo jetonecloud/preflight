@@ -260,58 +260,6 @@ def test_the_json_is_pretty_and_ends_in_a_newline():
     assert "\n  " in text
 
 
-# --- HTML -----------------------------------------------------------------
-
-
-def test_the_html_is_one_self_contained_file():
-    html = result([outcome([finding()])]).to_html()
-    assert html.startswith("<!doctype html>")
-    assert "<style>" in html
-    # No external anything: a report must not call home when it's opened.
-    for forbidden in ("<script", 'src="http', "@import", "<link"):
-        assert forbidden not in html
-
-
-def test_the_html_leads_with_the_number_and_the_fix():
-    html = result([outcome([finding(monthly=123.0)])]).to_html()
-    assert "Estimated monthly saving" in html
-    assert "$123" in html
-    assert "Start here" in html
-    assert "Delete it." in html
-    assert "500 GB at $0.08/GB-month" in html
-
-
-def test_the_html_admits_to_what_it_could_not_read():
-    skipped = outcome(
-        status="skipped",
-        reason="the role can't call ec2:DescribeImages",
-        missing_action="ec2:DescribeImages",
-    )
-    html = result([skipped], notes=("ap-south-1 couldn't be read.",)).to_html()
-    assert "What we couldn't see" in html
-    assert "ec2:DescribeImages" in html
-    assert "ap-south-1" in html
-    assert "preflight scan --modules cost --save" in html
-
-
-def test_a_clean_report_says_so_rather_than_showing_an_empty_list():
-    html = result([outcome([], examined=40)]).to_html()
-    assert "Nothing worth flagging turned up." in html
-    assert "Start here" not in html
-
-
-def test_the_demo_banner_is_unmissable():
-    html = result([outcome([finding()])], demo=True).to_html()
-    assert "Sample data" in html
-
-
-def test_html_escapes_what_came_from_the_account():
-    nasty = finding(name="<script>alert(1)</script>")
-    html = result([outcome([nasty])]).to_html()
-    assert "<script>alert(1)</script>" not in html
-    assert "&lt;script&gt;" in html
-
-
 # --- redaction ------------------------------------------------------------
 
 
@@ -373,14 +321,14 @@ def test_named_resources_are_pseudonymised_by_kind():
 
 @pytest.mark.parametrize(
     "amount, expected",
-    [(None, "—"), (0.0, "$0.00"), (3.651, "$3.65"), (12.4, "$12"), (1284.0, "$1,284")],
+    [(None, "-"), (0.0, "$0.00"), (3.651, "$3.65"), (12.4, "$12"), (1284.0, "$1,284")],
 )
 def test_money(amount, expected):
     assert money(amount) == expected
 
 
 @pytest.mark.parametrize(
-    "fraction, expected", [(None, "—"), (0.004, "under 1%"), (0.11, "11%"), (1.0, "100%")]
+    "fraction, expected", [(None, "-"), (0.004, "under 1%"), (0.11, "11%"), (1.0, "100%")]
 )
 def test_percent(fraction, expected):
     assert percent(fraction) == expected

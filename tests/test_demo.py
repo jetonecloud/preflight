@@ -39,7 +39,6 @@ def test_the_sample_is_worth_reading():
 def test_it_is_marked_as_sample_data_everywhere():
     result = report()
     assert result.demo
-    assert "Sample data" in result.to_html()
     assert json.loads(result.to_json())["scan"]["demo"] is True
 
 
@@ -93,11 +92,10 @@ def test_the_dates_move_with_the_calendar():
     assert "118 days" in stopped.title
 
 
-def test_it_writes_both_formats(tmp_path):
-    paths = write(report(), tmp_path)
-    assert paths["html"].exists() and paths["json"].exists()
-    assert paths["html"].read_text(encoding="utf-8").startswith("<!doctype html>")
-    json.loads(paths["json"].read_text(encoding="utf-8"))
+def test_it_writes_the_json_export(tmp_path):
+    path = write(report(), tmp_path)
+    assert path.exists() and path.suffix == ".json"
+    json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_it_can_be_redacted_like_any_other_report():
