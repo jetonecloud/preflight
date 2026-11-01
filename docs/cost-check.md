@@ -147,8 +147,8 @@ preflight scan --role-arn <arn> --only unattached-ebs-volumes
 # Something you can share without sharing your account
 preflight scan --role-arn <arn> --redact
 
-# JSON only, no questions, for a scheduled job
-preflight scan --role-arn <arn> --format json --yes --out ./audits
+# No questions, for a scheduled job
+preflight scan --role-arn <arn> --yes --out ./audits
 ```
 
 With no `--region`, every region the account has enabled is scanned — waste
@@ -156,10 +156,10 @@ tends to be in the region you've forgotten about.
 
 ## The JSON
 
-`--format json` writes a stable, versioned document (`schema_version: 1`)
-next to the HTML. Finding IDs are stable across scans — same resource, same
-check, same string — so two reports can be diffed to see what actually got
-fixed.
+Every scan writes a stable, versioned document (`schema_version: 1`)
+alongside the printed report, unless you pass `--no-json`. Finding IDs are
+stable across scans — same resource, same check, same string — so two
+reports can be diffed to see what actually got fixed.
 
 ```jsonc
 {

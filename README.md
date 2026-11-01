@@ -1,6 +1,6 @@
 # Preflight
 
-Preflight is a command-line tool that audits your AWS account and tells you what's worth fixing. It looks at how you deploy, what you're spending, and how much of your infrastructure depends on one or two people, then writes up a report you can share with the rest of your team.
+Preflight is a command-line tool that audits your AWS account and tells you what's worth fixing. It looks at how you deploy, what you're spending, and how much of your infrastructure depends on one or two people, then prints you a report you can read, diff, or paste into a ticket.
 
 It's read-only and open source (Apache-2.0), and it runs on your own machine. Your AWS credentials stay there.
 
@@ -40,7 +40,7 @@ preflight scan --modules cost --save
 preflight scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole --region us-east-1
 ```
 
-Before it starts, Preflight lists every call it's going to make and asks before making any of them. When it's done, you'll have an HTML report and a JSON export saved locally, and the first three things worth fixing printed in your terminal. Leave `--region` off and it scans every region the account has enabled — waste tends to be in the region you've forgotten about.
+Before it starts, Preflight lists every call it's going to make and asks before making any of them. When it's done, the whole report is printed in your terminal — plain ASCII tables, no colours required — and a JSON export of the same thing is saved next to you. `--no-json` skips the file if you only want the terminal copy. Leave `--region` off and it scans every region the account has enabled — waste tends to be in the region you've forgotten about.
 
 If you'd rather not create the role, you can scan with an existing profile, or with whatever credentials are already in the environment:
 
@@ -88,7 +88,7 @@ That declaration isn't just documentation. While a check runs, it's only allowed
 
 Preflight uses the standard AWS credential chain (profiles, SSO, STS, assume-role). It never handles your keys directly and never sends credentials anywhere.
 
-Nothing leaves your machine. A scan reads AWS and writes two local files, and that's all it does — there is no telemetry, no upload, and nothing to opt out of. If you want to share a report without sharing your account, `--redact` replaces every account and resource identifier with a stable pseudonym and leaves the findings and the arithmetic intact.
+Nothing leaves your machine. A scan reads AWS, prints the report, and writes one local JSON file, and that's all it does — there is no telemetry, no upload, and nothing to opt out of. If you want to share a report without sharing your account, `--redact` replaces every account and resource identifier with a stable pseudonym and leaves the findings and the arithmetic intact.
 
 (Emailing yourself a copy of the report, and the `preflight preview` command that would show you the exact payload first, are planned and not built yet. `preflight preview` currently does nothing.)
 

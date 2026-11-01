@@ -1,8 +1,8 @@
 # Installing Preflight
 
 Preflight is a single command-line tool. It runs on your machine, reads your
-AWS account over the normal SDK credential chain, and writes a report to a
-local file. Pick whichever of these you'd trust.
+AWS account over the normal SDK credential chain, and prints the report in
+your terminal (with a JSON export saved next to you). Pick whichever of these you'd trust.
 
 ## The installer
 
@@ -62,7 +62,7 @@ brew install jetonecloud/tap/preflight
 
 Useful when you'd rather not install anything, or when you want the scan to
 run somewhere with no access to the rest of your machine. Mount your AWS
-config read-only and a directory for the report to land in:
+config read-only and a directory for the JSON export to land in:
 
 ```sh
 docker run --rm \
@@ -100,7 +100,7 @@ preflight --version
 preflight demo
 ```
 
-`demo` renders a sample report from made-up data. It makes no AWS calls and
+`demo` prints a sample report from made-up data. It makes no AWS calls and
 needs no credentials, so it's a safe way to confirm the install and to see
 what a report looks like before pointing one at your account.
 
@@ -115,5 +115,5 @@ what a report looks like before pointing one at your account.
 | Docker | `docker pull ghcr.io/jetonecloud/preflight:latest` | `docker rmi ghcr.io/jetonecloud/preflight` |
 
 Preflight keeps no state anywhere. Removing the binary removes the tool; the
-only other thing it ever wrote is the reports you asked for, wherever you
-asked for them.
+only other thing it ever wrote is the JSON exports you asked for, wherever
+you asked for them.

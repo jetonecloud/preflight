@@ -18,18 +18,18 @@ preflight scan --current --region us-east-1
 
 `--current` means "use the credentials that are already here", which in
 CloudShell is your console identity. You'll see what Preflight is about to
-read, and a report lands in the current directory when it's done.
+read, the whole report is printed in the shell when it's done, and a JSON
+export of it lands in the current directory.
 
 ## Getting the report out
 
-CloudShell has a file download built in: **Actions → Download file**, then
-give it the report's name — something like
-`preflight-report-123456789012-20261022-141500.html`. `ls` will show you
-exactly what was written.
+The report is terminal output, so selecting it and copying it works — it is
+plain ASCII, so it pastes into a ticket or an email unchanged.
 
-The HTML file is self-contained: no fonts, scripts or images to fetch, so it
-opens correctly on your machine after the download, and prints to PDF from
-the browser if you need to send one.
+For the JSON, CloudShell has a file download built in: **Actions → Download
+file**, then give it the export's name — something like
+`preflight-report-123456789012-20261022-141500.json`. `ls` will show you
+exactly what was written.
 
 ## Which identity you're using
 
@@ -65,16 +65,16 @@ so you can read every permission before deploying it.
 - **Scanning every region takes a while.** CloudShell is in one region, but
   Preflight scans every region the account has enabled unless you narrow it.
   `--region us-east-1,eu-west-1` keeps it quick while you're trying it out.
-- **CloudShell's home directory persists; `/tmp` doesn't.** Write reports to
-  your home directory (the default) if you want them to survive a session
-  timeout, and download them before you finish.
-- **You get 1 GB of storage.** Reports are tens of kilobytes, so this only
+- **CloudShell's home directory persists; `/tmp` doesn't.** Write the JSON
+  export to your home directory (the default) if you want it to survive a
+  session timeout, and download it before you finish.
+- **You get 1 GB of storage.** Exports are tens of kilobytes, so this only
   matters if you keep hundreds.
 - **Sessions idle out after about 20 minutes.** A scan of a large account
   across every region can outlast an inattentive session; use `--region` or
   keep the tab active.
-- **Nothing leaves the account.** The report is written to CloudShell's
-  filesystem and nowhere else.
+- **Nothing leaves the account.** The report is printed in the shell and the
+  export is written to CloudShell's filesystem, and nowhere else.
 
 ## If you'd rather not install anything at all
 
@@ -84,5 +84,5 @@ CloudShell has Python 3.11, so `pipx` works too:
 pip install --user pipx && pipx install preflight-cli
 ```
 
-Either way, `preflight demo` renders a sample report with no credentials and
+Either way, `preflight demo` prints a sample report with no credentials and
 no AWS calls, if you want to see the output before running a real scan.
