@@ -298,6 +298,24 @@ def test_demo_needs_no_credentials(workdir, monkeypatch):
     assert invoke("demo").exit_code == 0
 
 
+def test_demo_reports_each_check_as_it_finishes(workdir):
+    """The sample arrives a line at a time, like the scan it imitates."""
+    result = invoke("demo")
+    lines = [line for line in result.stderr.splitlines() if line.startswith("  ! ")]
+    assert len(lines) == 9
+
+
+def test_the_sample_does_not_sit_there_pausing_down_a_pipe(workdir, monkeypatch):
+    """The pacing is for a reader. A pipe has none, so it waits for nothing."""
+    import time as clock
+
+    def explode(_seconds):
+        raise AssertionError("nothing should sleep without a terminal to watch it")
+
+    monkeypatch.setattr(clock, "sleep", explode)
+    assert invoke("demo", "--no-json").exit_code == 0
+
+
 def test_demo_honours_the_output_options(workdir):
     target = workdir / "samples"
     result = invoke("demo", "--out", str(target))

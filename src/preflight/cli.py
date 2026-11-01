@@ -335,6 +335,12 @@ def _deliver(result: Any, out: Path | None, *, save_json: bool = True) -> None:
     ui.print_scan_footer(result.seconds)
 
 
+#: How long the sample dwells on each check before printing its line. The
+#: demo has no account to read, so the pacing is the only thing standing
+#: between the reader and nine lines in a single frame.
+DEMO_PACE = 0.4
+
+
 @app.command()
 def demo(
     out: Annotated[
@@ -355,13 +361,32 @@ def demo(
     ui.print_banner()
 
     from preflight import demo as sample
+    from preflight.core.scan import ScanProgress
 
     ui.console.print(
         "  [dim]Sample data for a made-up account. No AWS calls, no credentials.[/dim]\n"
     )
-    result = sample.build()
-    for outcome in result.outcomes:
-        ui.print_check_result(outcome.check.title, outcome)
+
+    def starting(check: Any, status: Any) -> None:
+        status.update(f"[dim]{check.title}...[/dim]")
+        ui.pause(DEMO_PACE)
+
+    try:
+        with ui.scanning("Reading the sample account") as status:
+            progress = ScanProgress(
+                on_check_start=lambda check: starting(check, status),
+                on_check_done=lambda outcome: ui.print_check_result(outcome.check.title, outcome),
+            )
+            result = sample.build(progress=progress)
+            status.update("[dim]Looking up last month's bill...[/dim]")
+            ui.pause(DEMO_PACE)
+    except KeyboardInterrupt:
+        ui.console.print()
+        _fail("Stopped.", code=130)
+
+    # A beat between the last check and the total, so the number lands on a
+    # screen the reader has finished with rather than one still filling.
+    ui.pause(DEMO_PACE * 2)
     _deliver(result, out, save_json=not no_json)
 
 

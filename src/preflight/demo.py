@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from preflight.core.report import Account, ScanResult
-from preflight.core.scan import ScanContext, run_module
+from preflight.core.scan import ScanContext, ScanProgress, run_module
 from preflight.core.session import AwsSession, Identity
 from preflight.core.spend import ServiceSpend, Spend
 from preflight.modules.cost import COST
@@ -47,13 +47,18 @@ SPEND = Spend(
 )
 
 
-def build(now: datetime | None = None) -> ScanResult:
-    """Run the cost module against the sample account and return the report."""
+def build(now: datetime | None = None, progress: ScanProgress | None = None) -> ScanResult:
+    """Run the cost module against the sample account and return the report.
+
+    `progress` is the same hook a real scan draws its per-check lines with,
+    so the CLI can report the sample arriving a check at a time rather than
+    all at once.
+    """
     started = datetime.now(UTC)
     now = now or started
     session = DemoSession(now)
     ctx = ScanContext(session, regions=REGIONS, lookback_days=LOOKBACK_DAYS, now=now)
-    outcomes = run_module(ctx, COST)
+    outcomes = run_module(ctx, COST, progress=progress)
     last_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
     return ScanResult(
