@@ -61,12 +61,13 @@ def test_a_scan_prints_the_report_and_writes_the_json(workdir, sample_account):
     result = invoke("scan", "--role-arn", ROLE, "--yes")
     assert result.exit_code == 0, result.stderr
 
+    assert "findings, about $" in result.stderr
+    assert "JSON saved to" in result.stderr
     assert "Estimated saving" in result.stderr
     assert "Start here" in result.stderr
     assert "Everything we found" in result.stderr
     assert "What was checked" in result.stderr
     assert "How these numbers were worked out" in result.stderr
-    assert "JSON export saved" in result.stderr
     written = reports(workdir)
     assert len(written) == 1
     assert written[0].endswith(".json")
