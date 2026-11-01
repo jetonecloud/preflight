@@ -11,7 +11,9 @@ ticket, and a terminal that has never heard of a box-drawing character.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from rich import box
@@ -24,7 +26,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
-from preflight import __version__
+from preflight import __version__, keys
 from preflight.modules import Module, ModuleStatus
 
 #: Every table and panel we draw. Rich's ASCII box uses `+`, `-` and `|`
@@ -92,10 +94,12 @@ def print_step(number: int, total: int, title: str) -> None:
     console.print("[cyan]+--------------------------------------[/cyan]\n")
 
 
-def print_heading(title: str) -> None:
+def print_heading(title: str, note: str | None = None) -> None:
     """A section heading in the report, underlined in ASCII."""
-    console.print(f"  [bold]{title}[/bold]")
-    console.print(f"  [dim]{'-' * len(title)}[/dim]")
+    line = f"{title} - {note}" if note else title
+    tail = f" [dim]- {escape(note)}[/dim]" if note else ""
+    console.print(f"  [bold]{escape(title)}[/bold]{tail}")
+    console.print(f"  [dim]{'-' * len(line)}[/dim]")
 
 
 def modules_table(modules: Sequence[Module]) -> Table:
@@ -471,26 +475,281 @@ def scanning(message: str = "Reading the account") -> Any:
 # The report is the terminal. There is no file to open and no browser in the
 # loop: everything a reader needs is printed here, in ASCII, and the JSON
 # written alongside it is the same thing for a machine to read.
+#
+# On a real terminal it is read a section at a time, driven by the arrow
+# keys, so the end of a scan is a page you can take in rather than a wall
+# that scrolls past. Anywhere else - a pipe, CI, the test runner - the same
+# sections are printed one after another, so nothing is hidden from a script.
 
 
-def print_report(result: Any) -> None:
-    """The whole report, top to bottom."""
+@dataclass(frozen=True)
+class Page:
+    """One screen of the report: a name for it, and how to draw it."""
+
+    title: str
+    render: Callable[[], None]
+    note: str | None = None
+
+
+def print_intro(result: Any, *, json_path: str | None, paged: bool, sections: int) -> None:
+    """The few lines before the report: what we found, and what happens next.
+
+    Deliberately small. The scan has just finished and the reader wants one
+    number, the name of the file we wrote, and to know the report is about
+    to be shown to them rather than buried somewhere.
+    """
+    from preflight.core.report import money, plural
+
+    console.print()
+    if result.findings:
+        count = len(result.findings)
+        headline = (
+            f"[bold]{count}[/bold] {plural(count, 'finding')}, "
+            f"about [bold green]{money(result.monthly_usd)}/month[/bold green]."
+        )
+    else:
+        headline = (
+            f"[bold]Nothing worth flagging[/bold], from "
+            f"{result.examined} {plural(result.examined, 'resource')}."
+        )
+    console.print(_indented(f"Done. {headline}"))
+    if json_path:
+        console.print(_indented(f"[dim]JSON saved to[/dim] [cyan]{json_path}[/cyan]"))
+    console.print()
+    if paged:
+        console.print(
+            _indented(
+                f"[dim]The report is here in your terminal, in {sections} "
+                f"{plural(sections, 'section')}.[/dim]"
+            )
+        )
+        console.print(_indented(f"[dim]{PAGER_KEYS}[/dim]"))
+        console.print()
+        console.print(_indented("[dim]Press[/dim] [bold]Enter[/bold] [dim]to start.[/dim]"))
+    else:
+        console.print(_indented("[dim]The report follows.[/dim]"))
+    console.print()
+
+
+#: How to drive the pager, said the same way everywhere it's said.
+PAGER_KEYS = "Arrows to move, Enter for the next section, 'a' for all of it, q to quit"
+
+
+def show_report(result: Any, *, json_path: str | None = None, paged: bool | None = None) -> None:
+    """Say what we found and where it went, then show the report itself."""
+    if paged is None:
+        paged = console.is_terminal and keys.supported()
+    pages = report_pages(result, room=_room() if paged else None)
+    print_intro(result, json_path=json_path, paged=paged, sections=len(pages))
+    if not paged:
+        _print_pages(pages)
+        return
+    if _wait_to_start():
+        _run_pager(pages)
+
+
+def _wait_to_start() -> bool:
+    """Hold on the intro until there's a reason to move. False means skip it."""
+    try:
+        return keys.read_key() not in ("q", keys.ESCAPE)
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return False
+
+
+def print_report(result: Any, *, paged: bool | None = None) -> None:
+    """The whole report, with no preamble."""
+    if paged is None:
+        paged = console.is_terminal and keys.supported()
+    pages = report_pages(result, room=_room() if paged else None)
+    if paged:
+        _run_pager(pages)
+    else:
+        _print_pages(pages)
+
+
+def _print_pages(pages: Sequence[Page]) -> None:
+    """Every section, one after another, each under its own heading."""
+    for page in pages:
+        print_heading(page.title, page.note)
+        page.render()
+
+
+def report_pages(result: Any, *, room: int | None = None) -> list[Page]:
+    """The report, cut into sections at the places a reader would cut it.
+
+    `room` is how many lines a section's body may take. Given one, the two
+    sections that can run long - the index of findings, and a single check's
+    findings in full - are cut again to fit it. Left out, each section is one
+    page however long it is, which is what a pipe wants.
+    """
+    modules = ", ".join(module.name for module in result.modules)
+    pages = [Page(modules or "Summary", partial(_summary_page, result))]
+    if result.headline:
+        pages.append(Page("Start here", partial(print_start_here, result)))
+
+    numbered = _numbered_groups(result.groups())
+    if numbered:
+        rows = [item for _, items in numbered for item in items]
+        pages.extend(_split("Everything we found", rows, _findings_index, room))
+        for group, items in numbered:
+            pages.extend(
+                _split(
+                    group["check"].title,
+                    items,
+                    partial(_group_page, group),
+                    room,
+                    cap=_FINDINGS_PER_PAGE,
+                )
+            )
+
+    pages.append(Page("What was checked", partial(print_checked, result)))
+    if result.skipped or result.failed or result.notes:
+        pages.append(Page("What this scan couldn't see", partial(print_gaps, result)))
+    pages.append(Page("How these numbers were worked out", partial(print_method, result)))
+    return pages
+
+
+def _split(
+    title: str,
+    items: Sequence[Any],
+    render: Callable[[Sequence[Any]], None],
+    room: int | None,
+    *,
+    cap: int | None = None,
+) -> list[Page]:
+    """Cut `items` into pages that fit, each saying which of them it is.
+
+    A section taller than the window is worse than no section at all - you
+    read the bottom of it and the top has already gone - so the pages are
+    measured rather than guessed: how tall a table row or a finding comes
+    out depends on how much wraps, which only rendering it can tell you.
+    """
+    chunks = _chunks(items, render, room, cap)
+    return [
+        Page(
+            title,
+            partial(render, chunk),
+            note=f"page {position} of {len(chunks)}" if len(chunks) > 1 else None,
+        )
+        for position, chunk in enumerate(chunks, start=1)
+    ]
+
+
+def _chunks(
+    items: Sequence[Any],
+    render: Callable[[Sequence[Any]], None],
+    room: int | None,
+    cap: int | None,
+) -> list[list[Any]]:
+    """Greedily fill pages: take items until the next one wouldn't fit."""
+    if room is None:
+        return [list(items)]
+    chunks: list[list[Any]] = []
+    current: list[Any] = []
+    for item in items:
+        tall = current and _height(partial(render, [*current, item])) > room
+        if len(current) == cap or tall:
+            chunks.append(current)
+            current = [item]
+        else:
+            current.append(item)
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _height(render: Callable[[], None]) -> int:
+    """How many lines something takes once it's drawn, wrapping included."""
+    with console.capture() as captured:
+        render()
+    return len(captured.get().splitlines())
+
+
+def _numbered_groups(groups: Sequence[Any]) -> list[tuple[Any, list[tuple[int, Any]]]]:
+    """Findings numbered once, in reading order, so the index and the detail agree."""
+    numbered: list[tuple[Any, list[tuple[int, Any]]]] = []
+    number = 0
+    for group in groups:
+        items = []
+        for finding in group["findings"]:
+            number += 1
+            items.append((number, finding))
+        numbered.append((group, items))
+    return numbered
+
+
+#: What a page spends on its heading, the keys line, and the blank lines
+#: around them, before any of the report gets a line.
+_PAGE_CHROME = 5
+
+#: However tall the window is, this many findings on one page is plenty to
+#: read at once.
+_FINDINGS_PER_PAGE = 4
+
+#: Below this width, the index of findings drops its Check column rather
+#: than folding resource names a character at a time.
+_WIDE_ENOUGH_FOR_THE_CHECK = 100
+
+
+def _room() -> int:
+    """Lines a section's body has to work with."""
+    return max(console.size.height - _PAGE_CHROME, 4)
+
+
+def _summary_page(result: Any) -> None:
     print_report_header(result)
     print_headline(result)
-    print_start_here(result)
-    print_findings(result)
-    print_checked(result)
-    print_gaps(result)
-    print_method(result)
+
+
+def _run_pager(pages: Sequence[Page]) -> None:
+    """Read the report a section at a time, driven by the arrow keys."""
+    index = 0
+    while True:
+        _draw_page(pages, index)
+        try:
+            key = keys.read_key()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+        if key in ("q", keys.ESCAPE):
+            _clear()
+            return
+        if key == "a":
+            # Everything at once, so it's all in the scrollback to search.
+            _clear()
+            _print_pages(pages)
+            return
+        if key in (keys.LEFT, keys.UP, "p"):
+            index = max(index - 1, 0)
+        elif key in (keys.RIGHT, keys.DOWN, keys.ENTER, keys.SPACE, "n"):
+            if index == len(pages) - 1:
+                _clear()
+                return
+            index += 1
+
+
+def _draw_page(pages: Sequence[Page], index: int) -> None:
+    _clear()
+    page = pages[index]
+    console.print(
+        _indented(
+            f"[bold]{escape(page.title)}[/bold] [dim]- section {index + 1} of {len(pages)}[/dim]"
+        )
+    )
+    page.render()
+    console.print(_indented(f"[dim]{PAGER_KEYS}[/dim]"))
+
+
+def _clear() -> None:
+    if console.is_terminal:
+        console.clear()
 
 
 def print_report_header(result: Any) -> None:
     """What this report is of: the account, the regions, the window."""
     from preflight.core.report import plural
 
-    names = ", ".join(module.name for module in result.modules)
-    console.print()
-    print_heading(names)
     regions = f"{len(result.regions)} {plural(len(result.regions), 'region')}"
     if len(result.regions) <= 6:
         regions += f" ({', '.join(result.regions)})"
@@ -587,7 +846,6 @@ def print_start_here(result: Any) -> None:
 
     if not result.headline:
         return
-    print_heading("Start here")
     console.print(
         _indented(f"[dim]The {len(result.headline)} worth doing first, by what they save.[/dim]")
     )
@@ -610,54 +868,54 @@ def print_start_here(result: Any) -> None:
     console.print()
 
 
-def print_findings(result: Any) -> None:
-    """Every finding: an index table, then the evidence behind each line."""
-    from preflight.core.report import money, plural
+def _findings_index(rows: Sequence[tuple[int, Any]]) -> None:
+    """A table of findings, in the order the sections that follow take them."""
+    from preflight.core.report import money
 
-    groups = result.groups()
-    if not groups:
-        return
-
-    ordered = [finding for group in groups for finding in group["findings"]]
-    print_heading("Everything we found")
+    # Narrow windows don't have the room for both the check and the resource,
+    # and the resource is the one you can't look up elsewhere - the check is
+    # named at the top of the section that follows for every row here.
+    with_check = console.width >= _WIDE_ENOUGH_FOR_THE_CHECK
     console.print()
-
     table = Table(box=BOX, header_style="dim", border_style="dim")
     table.add_column("#", justify="right", width=3)
-    table.add_column("Check", no_wrap=True)
+    if with_check:
+        table.add_column("Check", no_wrap=True)
     table.add_column("Resource", style="bold", overflow="fold")
     table.add_column("Region", no_wrap=True)
     table.add_column("Severity", no_wrap=True)
     table.add_column("$/month", justify="right", no_wrap=True)
-    for index, finding in enumerate(ordered, start=1):
-        table.add_row(
-            Text(str(index), style="cyan"),
-            Text(finding.check),
+    for number, finding in rows:
+        cells = [Text(str(number), style="cyan")]
+        if with_check:
+            cells.append(Text(finding.check))
+        cells += [
             Text(finding.resource.label),
             Text(finding.resource.region),
             _severity(finding),
             Text(money(finding.monthly_usd)),
-        )
+        ]
+        table.add_row(*cells)
     console.print(Padding(table, (0, 0, 0, 2), expand=False))
     console.print()
 
-    number = 0
-    for group in groups:
-        count = len(group["findings"])
-        console.print(
-            _indented(
-                f"[bold]{group['check'].title}[/bold] "
-                f"[dim]- {count} {plural(count, 'finding')} - "
-                f"{money(group['monthly_usd'])}/month - "
-                f"looked at {group['outcome'].examined}[/dim]"
-            )
+
+def _group_page(group: Any, chunk: Sequence[tuple[int, Any]]) -> None:
+    """One check's findings, in full. Split across pages when there are many."""
+    from preflight.core.report import money, plural
+
+    count = len(group["findings"])
+    console.print(
+        _indented(
+            f"[dim]{count} {plural(count, 'finding')} - "
+            f"{money(group['monthly_usd'])}/month - "
+            f"looked at {group['outcome'].examined}[/dim]"
         )
-        console.print(_indented(f"[dim]{group['check'].looks_for}[/dim]"))
-        console.print()
-        for finding in group["findings"]:
-            number += 1
-            _print_finding(number, finding)
+    )
+    console.print(_indented(f"[dim]{escape(group['check'].looks_for)}[/dim]"))
     console.print()
+    for number, finding in chunk:
+        _print_finding(number, finding)
 
 
 def _severity(finding: Any) -> Text:
@@ -708,7 +966,6 @@ def print_checked(result: Any) -> None:
 
     if not result.outcomes:
         return
-    print_heading("What was checked")
     console.print()
     table = Table(box=BOX, header_style="dim", border_style="dim")
     table.add_column("Check", style="bold", no_wrap=True)
@@ -740,7 +997,6 @@ def print_gaps(result: Any) -> None:
     """What the scan couldn't see, said out loud rather than left in the file."""
     if not (result.skipped or result.failed or result.notes):
         return
-    print_heading("What this scan couldn't see")
     console.print(_indented("[dim]So you can judge how complete the rest of it is.[/dim]"))
     console.print()
     for outcome in result.skipped:
@@ -770,7 +1026,6 @@ def print_method(result: Any) -> None:
     Printed with every report, because a number you can't check is a number
     you shouldn't trust.
     """
-    print_heading("How these numbers were worked out")
     notes = (
         "Every figure is a list price for us-east-1, the cheapest region for "
         f"everything priced here, reviewed {result.prices_reviewed}. In any "
@@ -791,24 +1046,6 @@ def print_method(result: Any) -> None:
     )
     for note in notes:
         console.print(_hanging("[dim]*[/dim]", f"[dim]{note}[/dim]"))
-    console.print()
-
-
-def print_report_saved(path: Any) -> None:
-    """Where the machine-readable copy went."""
-    console.print(
-        Panel(
-            Text.assemble(
-                ("OK ", "bold green"),
-                ("JSON export saved\n", "bold"),
-                (str(path), "cyan"),
-            ),
-            box=BOX,
-            border_style="green",
-            padding=(0, 2),
-            expand=False,
-        )
-    )
     console.print()
 
 
