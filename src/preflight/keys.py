@@ -12,12 +12,14 @@ import sys
 
 UP = "up"
 DOWN = "down"
+LEFT = "left"
+RIGHT = "right"
 ENTER = "enter"
 SPACE = "space"
 ESCAPE = "escape"
 
 #: What a CSI sequence's final byte means to us.
-_CSI: dict[str, str] = {"A": UP, "B": DOWN}
+_CSI: dict[str, str] = {"A": UP, "B": DOWN, "C": RIGHT, "D": LEFT}
 
 
 def supported() -> bool:
@@ -38,8 +40,8 @@ def supported() -> bool:
 def read_key() -> str:
     """Block for one keypress and name it.
 
-    Returns `UP`, `DOWN`, `ENTER`, `SPACE`, `ESCAPE`, or the character itself
-    lowercased. Raises `KeyboardInterrupt` on Ctrl-C and `EOFError` on Ctrl-D,
+    Returns `UP`, `DOWN`, `LEFT`, `RIGHT`, `ENTER`, `SPACE`, `ESCAPE`, or the
+    character itself lowercased. Raises `KeyboardInterrupt` on Ctrl-C and `EOFError` on Ctrl-D,
     so callers can treat them the way they treat an abandoned prompt.
     """
     char = _read_char_windows() if sys.platform == "win32" else _read_char_posix()
@@ -94,5 +96,5 @@ def _read_char_windows() -> str:  # pragma: no cover - exercised on Windows only
 
     char = msvcrt.getwch()
     if char in ("\x00", "\xe0"):
-        return {"H": UP, "P": DOWN}.get(msvcrt.getwch(), "\x1b")
+        return {"H": UP, "P": DOWN, "K": LEFT, "M": RIGHT}.get(msvcrt.getwch(), "\x1b")
     return char
