@@ -260,6 +260,29 @@ def test_without_a_terminal_every_section_is_printed(monkeypatch):
     assert "How these numbers were worked out" in text
 
 
+# --- pacing ---------------------------------------------------------------
+
+
+def slept(monkeypatch) -> list[float]:
+    waits: list[float] = []
+    monkeypatch.setattr(ui.time, "sleep", waits.append)
+    return waits
+
+
+def test_a_pause_waits_when_somebody_is_watching(monkeypatch):
+    monkeypatch.setattr(type(ui.console), "is_terminal", property(lambda self: True))
+    waits = slept(monkeypatch)
+    ui.pause(0.4)
+    assert waits == [0.4]
+
+
+def test_a_pause_is_nothing_at_all_without_a_terminal(monkeypatch):
+    monkeypatch.setattr(type(ui.console), "is_terminal", property(lambda self: False))
+    waits = slept(monkeypatch)
+    ui.pause(0.4)
+    assert waits == []
+
+
 # --- the intro ------------------------------------------------------------
 
 

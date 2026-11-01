@@ -11,6 +11,7 @@ ticket, and a terminal that has never heard of a box-drawing character.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -468,6 +469,18 @@ def print_check_result(title: str, outcome: Any) -> None:
 def scanning(message: str = "Reading the account") -> Any:
     """A spinner for the long middle of a scan, on a terminal."""
     return console.status(f"[dim]{message}...[/dim]", spinner="dots")
+
+
+def pause(seconds: float) -> None:
+    """Wait, but only when there's somebody watching.
+
+    A real scan arrives a line at a time because each check takes a moment
+    to read the account. The demo has nothing to read, so it would otherwise
+    dump nine lines in one frame - faster, and harder to follow. Down a pipe
+    or under the test runner there's nobody watching, so nothing waits.
+    """
+    if console.is_terminal:
+        time.sleep(seconds)
 
 
 # --- the report -----------------------------------------------------------
