@@ -3,7 +3,7 @@
 Their actions are real: between them and `cost.py` they account for every
 action in `iam/policy.json`, which is the role you get with every module
 selected. They live here rather than in their own files until their checks
-are written — graduating one means moving it to `modules/<key>.py` and
+are written - graduating one means moving it to `modules/<key>.py` and
 flipping its status to `AVAILABLE`.
 """
 
@@ -94,7 +94,7 @@ BUS_FACTOR = Module(
     "resources with no clear owner.",
     iam_actions=(
         # Read-only event query. Listed as an exception to the Get/List/Describe
-        # rule in core/iam.py — it reads the CloudTrail event history and
+        # rule in core/iam.py - it reads the CloudTrail event history and
         # mutates nothing.
         "cloudtrail:LookupEvents",
         "iam:ListUsers",

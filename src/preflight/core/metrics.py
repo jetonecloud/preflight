@@ -1,6 +1,6 @@
 """Reading CloudWatch, which is how a check tells "unused" from "quiet".
 
-Nothing here decides anything — it fetches series and reports what's in them.
+Nothing here decides anything - it fetches series and reports what's in them.
 The judgement call ("no bytes through this NAT gateway in two weeks means
 nobody is using it") belongs in the check, next to the guard that keeps it
 honest.
@@ -93,7 +93,7 @@ def fetch(
 ) -> dict[str, MetricSeries]:
     """Fetch every request against one region, in parallel, in order.
 
-    Raises the first `AwsError` any of them hit — in practice a missing
+    Raises the first `AwsError` any of them hit - in practice a missing
     `cloudwatch:GetMetricStatistics`, which means the check asking for this
     can't run at all and should be reported as skipped rather than guessed at.
     """
@@ -119,8 +119,8 @@ def _series(
     end: datetime,
     region: str | None,
 ) -> MetricSeries:
-    # Imported here rather than at the top so that declaring a check — which
-    # is all `preflight scan` does when it generates a role — never loads
+    # Imported here rather than at the top so that declaring a check - which
+    # is all `preflight scan` does when it generates a role - never loads
     # botocore. See `tests/test_cli_scan.py::test_scan_does_not_import_an_aws_client`.
     from preflight.core import aws
 

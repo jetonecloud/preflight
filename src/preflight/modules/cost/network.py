@@ -82,8 +82,8 @@ def unassociated_ips(ctx: ScanContext) -> Iterator[Finding]:
                 ),
                 recommendation=(
                     "Release it. If it's being held because the address itself "
-                    "matters — an allowlist somewhere, a DNS record you can't "
-                    "change yet — tag it 'preflight:ignore'."
+                    "matters - an allowlist somewhere, a DNS record you can't "
+                    "change yet - tag it 'preflight:ignore'."
                 ),
                 confidence=Confidence.HIGH,
                 estimate=Estimate(monthly, PUBLIC_IPV4_HOUR.describe(1, "address")),
@@ -352,7 +352,7 @@ def _idle_classic_balancers(ctx: ScanContext, region: str) -> Iterator[Finding]:
         created = ctx.days_since(balancer.get("CreatedTime"))
         evidence = [
             "No instances are registered with it, so every request to it fails.",
-            "This is a Classic load balancer — the previous generation, which AWS "
+            "This is a Classic load balancer - the previous generation, which AWS "
             "has been encouraging people off for years.",
         ]
         if created is not None:

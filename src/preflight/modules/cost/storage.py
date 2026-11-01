@@ -2,7 +2,7 @@
 
 EBS is where money hides quietly. A volume outlives the instance it was
 attached to, a snapshot outlives the volume, and neither of them shows up
-anywhere you'd normally look — they just sit on the bill as "EBS" forever.
+anywhere you'd normally look - they just sit on the bill as "EBS" forever.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from preflight.modules.base import Check
 
 MODULE = "cost"
 
-#: Don't flag a volume that was detached this week — that's a migration in
+#: Don't flag a volume that was detached this week - that's a migration in
 #: progress, not waste, and saying so would be the kind of false positive
 #: that teaches people to ignore the report.
 MIN_VOLUME_AGE_DAYS = 7
@@ -31,7 +31,7 @@ STALE_SNAPSHOT_DAYS = 365
 
 
 def unattached_volumes(ctx: ScanContext) -> Iterator[Finding]:
-    """EBS volumes in the `available` state — attached to nothing, billed anyway."""
+    """EBS volumes in the `available` state - attached to nothing, billed anyway."""
     for region in ctx.regions:
         volumes = ctx.collect(
             "ec2:DescribeVolumes",
@@ -94,7 +94,7 @@ def old_snapshots(ctx: ScanContext) -> Iterator[Finding]:
 
     The AMI check is the important one. Deleting a snapshot that backs a
     registered image breaks the image, and a report that suggests it would be
-    worse than no report — so a snapshot referenced by any AMI we can see is
+    worse than no report - so a snapshot referenced by any AMI we can see is
     never flagged, whatever its age.
     """
     for region in ctx.regions:
@@ -152,7 +152,7 @@ def old_snapshots(ctx: ScanContext) -> Iterator[Finding]:
             else:
                 evidence.append(
                     f"Checked against the {len(in_use_by_ami)} snapshot(s) that back "
-                    "AMIs in this region — this isn't one of them."
+                    "AMIs in this region - this isn't one of them."
                 )
             if snapshot.get("Description"):
                 evidence.append(f"Description: {str(snapshot['Description'])[:160]}")

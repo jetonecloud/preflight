@@ -1,13 +1,13 @@
 """Taking the account out of a report, so it can leave the room.
 
-A Preflight report is written to be shared — with a co-founder, a board, a
+A Preflight report is written to be shared - with a co-founder, a board, a
 contractor, whoever is going to approve the work. Sometimes the findings are
 the point and the identifiers aren't, and a report full of real instance IDs
 and an account number is awkward to paste into a thread.
 
 `--redact` replaces every identifier with a stable pseudonym: the same volume
 is `vol-1` everywhere in the report, so the document still reads as a document
-and the numbers still add up — you just can't tell whose account it is. The
+and the numbers still add up - you just can't tell whose account it is. The
 dollar figures, severities and reasoning are untouched, because those are the
 part worth reading.
 
@@ -91,10 +91,10 @@ class Redactor:
 
 
 def _prefix_for(value: str, kind: str) -> str:
-    """`vol-0abc…` keeps `vol`; a database called `prod-api` becomes `rds-instance`.
+    """`vol-0abc...` keeps `vol`; a database called `prod-api` becomes `rds-instance`.
 
     Falling back to the resource kind rather than something generic keeps the
-    pseudonyms readable — a redacted report where everything is `resource-7`
+    pseudonyms readable - a redacted report where everything is `resource-7`
     is technically redacted and useless to read.
     """
     if RESOURCE_ID.fullmatch(value):

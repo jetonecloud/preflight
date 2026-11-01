@@ -1,7 +1,7 @@
 """Instances that cost more than the work they're doing.
 
 Two different shapes of waste. A stopped instance isn't billed for compute
-at all — the money is in the disks nobody deleted with it, which is worth
+at all - the money is in the disks nobody deleted with it, which is worth
 saying plainly because "stopped instances cost nothing" is the thing most
 people half-remember. An oversized instance is billed in full for capacity
 it never touches.
@@ -28,7 +28,7 @@ from preflight.modules.base import Check
 
 MODULE = "cost"
 
-#: Below this, a stopped instance is just a stopped instance — someone is
+#: Below this, a stopped instance is just a stopped instance - someone is
 #: working on it this sprint.
 STOPPED_DAYS = 30
 
@@ -46,7 +46,7 @@ MIN_METRIC_COVERAGE = 0.5
 #: box moving real traffic is not a safe thing to shrink. 50 GB/day.
 BUSY_NETWORK_BYTES_PER_DAY = 50 * 1024**3
 
-#: `User initiated (2025-08-02 14:33:21 GMT)` — the only record EC2 keeps of
+#: `User initiated (2025-08-02 14:33:21 GMT)` - the only record EC2 keeps of
 #: when an instance stopped.
 STOP_TIME = re.compile(r"\((\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) GMT\)")
 
@@ -113,7 +113,7 @@ def long_stopped_instances(ctx: ScanContext) -> Iterator[Finding]:
                 ),
                 evidence=tuple(evidence),
                 recommendation=(
-                    "If you'd miss it, create an AMI and terminate the instance — "
+                    "If you'd miss it, create an AMI and terminate the instance - "
                     "the image costs a fraction of the live volumes and you can "
                     "launch it back. If you wouldn't, terminate it."
                 ),
@@ -216,7 +216,7 @@ def oversized_instances(ctx: ScanContext) -> Iterator[Finding]:
                     "comes from a launch template rather than the instance itself."
                 )
             evidence.append(
-                "CPU is only part of the picture — check memory and disk before resizing anything."
+                "CPU is only part of the picture - check memory and disk before resizing anything."
             )
 
             yield Finding(

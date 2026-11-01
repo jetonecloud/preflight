@@ -1,7 +1,7 @@
 """What a check found, and what we think it's worth.
 
-A check's only output is `Finding`s. Everything a report shows — the headline
-number, the ranking, the derivation under each dollar figure — is computed
+A check's only output is `Finding`s. Everything a report shows - the headline
+number, the ranking, the derivation under each dollar figure - is computed
 from them, so a finding has to carry its own evidence rather than leave the
 report to guess.
 
@@ -54,7 +54,7 @@ _SEVERITY_ORDER: dict[Severity, int] = {
 class Confidence(Enum):
     """How sure the check is that this is a real problem.
 
-    `HIGH` means the API said so outright — a volume whose state is
+    `HIGH` means the API said so outright - a volume whose state is
     `available` is unattached, full stop. `MEDIUM` means we inferred it from
     usage metrics, which can be wrong if the thing is seasonal. `LOW` means
     the signal is weak enough that the finding leads with "worth a look"
@@ -179,7 +179,7 @@ class Resource:
 class Finding:
     """One thing worth fixing, in one account.
 
-    `id` is stable across scans — same resource, same check, same string — so
+    `id` is stable across scans - same resource, same check, same string - so
     two reports can be diffed to see what was actually fixed between them.
     """
 

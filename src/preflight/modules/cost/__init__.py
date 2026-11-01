@@ -5,7 +5,7 @@ Nine checks, grouped by what they read rather than by what they find:
 `compute` for EC2 and `database` for RDS.
 
 The module's `iam_actions` is the union of what those checks declare plus
-`support_actions` — the reads that belong to the scan rather than to any one
+`support_actions` - the reads that belong to the scan rather than to any one
 check. A test enforces that, so the role Preflight generates stays exactly
 the set of calls Preflight makes.
 """

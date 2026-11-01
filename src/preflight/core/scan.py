@@ -31,12 +31,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 # `core` never imports `modules` at runtime, only for types. The checks live
 # in `modules` and import this file, so a runtime edge the other way would be
-# a cycle — and the layering is right as it is: the runner doesn't need to
+# a cycle - and the layering is right as it is: the runner doesn't need to
 # know which modules exist, only how to run one it's handed.
 
 # botocore is imported inside the functions that need it, never at the top of
-# a module a check imports. Generating an IAM role must not load an AWS SDK —
-# that's the promise `tests/test_cli_scan.py` holds this code to — and the
+# a module a check imports. Generating an IAM role must not load an AWS SDK -
+# that's the promise `tests/test_cli_scan.py` holds this code to - and the
 # checks are declared on the same import path the generator walks.
 
 #: How far back the usage-based checks look by default. Two weeks is long
@@ -144,7 +144,7 @@ class ScanContext:
         want the same list of volumes, and a scan is a point in time anyway,
         so reading it twice would only cost the user API calls. Pass
         `client` where boto3's name for a service doesn't follow the IAM
-        prefix — the Classic load balancer API is `elb`, but the permission
+        prefix - the Classic load balancer API is `elb`, but the permission
         is still `elasticloadbalancing:DescribeLoadBalancers`.
 
         Returns an empty list for a region that won't answer, after noting
@@ -276,7 +276,7 @@ class ScanContext:
     def looked_at(self, count: int = 1) -> None:
         """Count resources the running check considered.
 
-        The report shows this next to the findings — "142 volumes, 3 worth
+        The report shows this next to the findings - "142 volumes, 3 worth
         looking at" reads very differently from "3 findings", and it's the
         difference between a reader believing the quiet checks and not.
         """
@@ -395,7 +395,7 @@ def run_check(ctx: ScanContext, check: Check) -> CheckOutcome:
     except aws.NotSubscribed as exc:
         return CheckOutcome(check, "skipped", reason=exc.message, seconds=elapsed())
     except aws.CredentialsError:
-        # Nothing else will work either — let this one end the scan.
+        # Nothing else will work either - let this one end the scan.
         raise
     except aws.AwsError as exc:
         return CheckOutcome(
@@ -442,7 +442,7 @@ def parse_timestamp(value: Any) -> datetime | None:
 
     boto3 hands back aware datetimes, but fixtures, cached JSON and the demo
     data use strings, and a naive datetime compared against an aware one
-    raises rather than returning a wrong answer — which is worse here,
+    raises rather than returning a wrong answer - which is worse here,
     because it would take out a whole check over a formatting detail.
     """
     if value is None:

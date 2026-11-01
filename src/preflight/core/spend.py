@@ -7,7 +7,7 @@ work out whether to care.
 
 This is context, not a finding. If `ce:GetCostAndUsage` isn't granted, or
 Cost Explorer was never enabled on the account, the report simply doesn't
-show the comparison — it's never a reason to stop a scan.
+show the comparison - it's never a reason to stop a scan.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def last_full_month(today: date) -> tuple[date, date]:
     """The first day of last month, and the first day of this one.
 
     Cost Explorer's `End` is exclusive, so this pair is exactly one calendar
-    month and never includes the partial month in progress — a half-finished
+    month and never includes the partial month in progress - a half-finished
     month would make every percentage in the report look twice as good as it
     is.
     """

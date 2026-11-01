@@ -3,7 +3,7 @@
 Every call a check makes goes through here, so there is one place that knows
 what `AccessDeniedException` means and one place that decides what to tell
 the user about it. The rule: a check that can't read what it needs is
-*skipped and reported as skipped* — never silently downgraded into a
+*skipped and reported as skipped* - never silently downgraded into a
 half-answer, because a cost report that quietly omits a region is worse than
 one that admits it couldn't look.
 """
@@ -34,7 +34,7 @@ class AwsError(Exception):
 
 
 class CredentialsError(AwsError):
-    """We couldn't authenticate at all — nothing was read."""
+    """We couldn't authenticate at all - nothing was read."""
 
 
 class MissingPermission(AwsError):

@@ -1,7 +1,7 @@
 """Single keypresses, for the pickers that want arrow keys.
 
-Only used when there's a real terminal on the other end. Anything else — a
-pipe, a CI job, the test runner — gets `supported() is False` and the caller
+Only used when there's a real terminal on the other end. Anything else - a
+pipe, a CI job, the test runner - gets `supported() is False` and the caller
 falls back to asking a question and reading a line, so every flow stays
 scriptable.
 """
@@ -61,7 +61,7 @@ def _read_char_posix() -> str:
 
     Reads the file descriptor rather than `sys.stdin`: the text wrapper would
     pull a whole `ESC [ A` into its own buffer while answering `read(1)` with
-    just the ESC, and then `select` — which only sees the descriptor — would
+    just the ESC, and then `select` - which only sees the descriptor - would
     report nothing left and we'd call it a bare Escape.
     """
     import os

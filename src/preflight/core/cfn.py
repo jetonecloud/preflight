@@ -1,6 +1,6 @@
 """Builds the CloudFormation role template from the selected modules.
 
-The only input is the module registry — no AWS calls, no credentials, no
+The only input is the module registry - no AWS calls, no credentials, no
 network. The output is deterministic: the same modules always produce the same
 bytes, so a user who regenerates the template after upgrading Preflight gets a
 readable diff instead of a reshuffled file.
@@ -59,7 +59,7 @@ def render_role_template(
     """Render the read-only CloudFormation role template for `modules`.
 
     `services` narrows the role to a subset of the services the modules
-    declare — what the permission picker produces when the user turns some of
+    declare - what the permission picker produces when the user turns some of
     them off. Raises `ValueError` if no modules were given or if the narrowing
     leaves nothing to grant, and `preflight.core.iam.WriteActionError` if any
     declared action isn't provably read-only.

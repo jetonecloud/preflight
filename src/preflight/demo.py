@@ -1,7 +1,7 @@
 """A sample account, so you can read a report before trusting us with yours.
 
-`preflight demo` runs the **real** checks — the same functions, the same
-guards, the same arithmetic — against canned API responses instead of a live
+`preflight demo` runs the **real** checks - the same functions, the same
+guards, the same arithmetic - against canned API responses instead of a live
 account. That's deliberate. A hand-written sample report drifts from the
 code the moment a check changes its mind about something, and the first
 thing it would mislead you about is what the tool actually does.
@@ -64,7 +64,7 @@ def build(now: datetime | None = None) -> ScanResult:
         started_at=started,
         finished_at=datetime.now(UTC),
         lookback_days=LOOKBACK_DAYS,
-        credentials="sample data — no AWS calls were made",
+        credentials="sample data - no AWS calls were made",
         command="preflight demo",
         spend=Spend(
             period=last_month,
@@ -84,7 +84,7 @@ class DemoSession(AwsSession):
     """A real session with the client factory replaced.
 
     Subclassing rather than reimplementing means region discovery, identity
-    and error handling are the shipping code — so the demo exercises the
+    and error handling are the shipping code - so the demo exercises the
     same path a real scan does, which is the whole point of it.
     """
 
@@ -395,7 +395,7 @@ _ADDRESSES: dict[str, list[dict[str, Any]]] = {
             "PublicIpv4Pool": "amazon",
         },
         {
-            # In use — not a finding.
+            # In use - not a finding.
             "AllocationId": "eipalloc-0123456789abcdef2",
             "PublicIp": "203.0.113.88",
             "PublicIpv4Pool": "amazon",
@@ -447,7 +447,7 @@ _SNAPSHOTS: dict[str, list[dict[str, Any]]] = {
             "Tags": _tags(Name="pg-pre-migration"),
         },
         {
-            # Backs a registered AMI — never flagged, whatever its age.
+            # Backs a registered AMI - never flagged, whatever its age.
             "SnapshotId": "snap-0123456789abcdef1",
             "VolumeId": "vol-0deadbeef00000002",
             "VolumeSize": 80,

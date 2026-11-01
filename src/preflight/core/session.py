@@ -1,8 +1,8 @@
 """Getting hold of AWS credentials, and knowing whose they are.
 
 Preflight never asks for an access key. It uses the standard AWS credential
-chain — environment variables, a named profile, SSO, an instance or task
-role — which means the credentials it runs with are ones you already had, and
+chain - environment variables, a named profile, SSO, an instance or task
+role - which means the credentials it runs with are ones you already had, and
 logging in is something you do with your usual tools before you start.
 
 The one thing this module adds on top is `--role-arn`: assume the dedicated
@@ -34,7 +34,7 @@ CLIENT_NAMES: dict[str, str] = {
 #: partition) rather than scanned per region.
 GLOBAL_SERVICES: dict[str, str] = {"ce": "us-east-1", "pricing": "us-east-1"}
 
-#: Where to fall back when nothing — not the profile, not the environment —
+#: Where to fall back when nothing - not the profile, not the environment -
 #: says which region to talk to first.
 DEFAULT_HOME_REGION = "us-east-1"
 
@@ -140,7 +140,7 @@ class AwsSession:
     def enabled_regions(self) -> tuple[str, ...]:
         """Regions this account has switched on, sorted.
 
-        Raises `MissingPermission` if `ec2:DescribeRegions` wasn't granted —
+        Raises `MissingPermission` if `ec2:DescribeRegions` wasn't granted -
         the caller decides whether to fall back to one region or stop.
         """
         regions = aws.collect(
@@ -175,7 +175,7 @@ def open_session(
     """Resolve credentials the way the user asked for them.
 
     With `role_arn`, the profile (or ambient credentials) is used only to
-    assume that role — which is the recommended path, because the role is the
+    assume that role - which is the recommended path, because the role is the
     one whose permissions you read before deploying.
     """
     import boto3
@@ -253,7 +253,7 @@ class RegionPlan:
 def resolve_regions(session: AwsSession, requested: Sequence[str] | None) -> RegionPlan:
     """Work out the regions to scan.
 
-    Named regions are taken at face value — if you asked for it, we'll try
+    Named regions are taken at face value - if you asked for it, we'll try
     it. With none named we read every region the account has enabled, because
     forgotten resources are rarely in the region you remember using. Without
     `ec2:DescribeRegions` we can only scan the one region we were pointed at,

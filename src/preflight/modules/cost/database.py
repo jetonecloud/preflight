@@ -83,7 +83,7 @@ def stopped_databases(ctx: ScanContext) -> Iterator[Finding]:
                 recommendation=(
                     "Decide one way or the other: take a final snapshot and delete "
                     "it, or start it and use it. A stopped RDS instance is the "
-                    "worst of both — you pay for it and it isn't available."
+                    "worst of both - you pay for it and it isn't available."
                 ),
                 confidence=Confidence.HIGH,
                 estimate=Estimate(monthly, basis),
@@ -142,7 +142,7 @@ def old_database_snapshots(ctx: ScanContext) -> Iterator[Finding]:
             source = str(snapshot.get("DBInstanceIdentifier") or "an instance")
             evidence = [
                 f"Taken manually {age:,.0f} days ago, from {source}.",
-                "Manual snapshots are never cleaned up automatically — they "
+                "Manual snapshots are never cleaned up automatically - they "
                 "outlive the instance they came from and keep billing.",
                 f"Engine {snapshot.get('Engine')}, {size:,.0f} GB allocated.",
             ]
@@ -173,7 +173,7 @@ def old_database_snapshots(ctx: ScanContext) -> Iterator[Finding]:
 STOPPED_DATABASES = Check(
     key="stopped-databases",
     title="Stopped RDS instances",
-    looks_for="Databases that are stopped but still charged for storage — and restart themselves.",
+    looks_for="Databases that are stopped but still charged for storage - and restart themselves.",
     actions=("rds:DescribeDBInstances",),
     run=stopped_databases,
 )

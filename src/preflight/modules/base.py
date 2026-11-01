@@ -41,7 +41,7 @@ class Check:
     documentation: the scan runner only lets a check make the calls listed
     here, so a check that reaches for something it didn't declare fails
     immediately in development instead of working on a wide-open profile and
-    breaking on a Preflight role — or, worse, reading something the user
+    breaking on a Preflight role - or, worse, reading something the user
     never agreed to hand over.
     """
 
@@ -64,7 +64,7 @@ class Module:
 
     Modules are declared, not discovered: adding one means adding a `Module`
     to the registry with every action its checks call. The actions are the
-    contract — `preflight scan` builds the IAM role from them, so a check that
+    contract - `preflight scan` builds the IAM role from them, so a check that
     calls something it didn't declare will fail against a Preflight role
     rather than quietly reading more than the user agreed to.
     """
@@ -77,7 +77,7 @@ class Module:
     #: The checks this module runs, in report order. Empty for a module
     #: that's declared its permissions but hasn't shipped its logic yet.
     checks: tuple[Check, ...] = ()
-    #: Actions the module needs that no single check owns — region discovery,
+    #: Actions the module needs that no single check owns - region discovery,
     #: price lookups, the spend figure the report is measured against. Kept
     #: separate so `iam_actions` can be checked against the checks that use it.
     support_actions: tuple[str, ...] = ()

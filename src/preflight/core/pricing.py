@@ -17,7 +17,7 @@ Estimates are supposed to be the number you'd be comfortable defending on a
 call, not the biggest one we can justify.
 
 Prices exclude tax, Savings Plans, Reserved Instances, private pricing and
-EDP discounts — which, again, makes the estimates conservative for anyone who
+EDP discounts - which, again, makes the estimates conservative for anyone who
 has them. The report says so.
 """
 
@@ -80,7 +80,7 @@ EBS_GB_MONTH: Mapping[str, Price] = {
 EBS_FALLBACK = Price(0.015, "GB-month", f"{LIST_PRICE_NOTE}, cheapest EBS tier")
 
 #: Standard-tier EBS snapshot storage. Snapshots are incremental, so this is
-#: an upper bound applied to the volume size — see `snapshot_monthly`.
+#: an upper bound applied to the volume size - see `snapshot_monthly`.
 SNAPSHOT_GB_MONTH = Price(0.050, "GB-month")
 
 #: How much of a snapshot's nominal volume size we assume is actually billed.
@@ -201,8 +201,8 @@ SIZE_LADDER: tuple[str, ...] = (
 
 
 #: How many rungs down to consider before giving up. The ladder is shared by
-#: every family, but no family has every rung — `c6i` skips 18xlarge, `c5`
-#: skips 16xlarge — so the nearest smaller size is sometimes a type that
+#: every family, but no family has every rung - `c6i` skips 18xlarge, `c5`
+#: skips 16xlarge - so the nearest smaller size is sometimes a type that
 #: doesn't exist. Trying a couple more finds the real one; trying many would
 #: start comparing an instance against something half its size.
 SMALLER_STEPS = 3
@@ -322,7 +322,7 @@ class PriceBook:
         """Ask the factory every time.
 
         The factory is the scan context, which re-checks that the running
-        check declared `pricing:GetProducts` — so the price lookup can't be
+        check declared `pricing:GetProducts` - so the price lookup can't be
         the one call that slips past the permission contract. Building the
         client itself is cheap; the session caches it.
 
