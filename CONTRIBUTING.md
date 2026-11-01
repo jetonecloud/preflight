@@ -15,13 +15,18 @@ Thanks for considering a contribution. Preflight is Apache-2.0 licensed and buil
 ```sh
 git clone https://github.com/jetonecloud/preflight.git
 cd preflight
-uv sync
+uv sync --extra dev
 uv run pytest
 ```
 
 - Python 3.11+, managed via `uv` and `pyproject.toml`.
 - Lint/format with **Ruff**: `uv run ruff check . && uv run ruff format .`
 - Tests with **pytest** + **moto** for AWS mocking: `uv run pytest`
+
+[`docs/development.md`](docs/development.md) has the rest: running a scan
+or the sample report from a checkout, every flag worth knowing, how to
+drive the whole CLI against the demo account without AWS, and where each
+piece of the code lives.
 
 ## Adding or changing a check
 
