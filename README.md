@@ -1,59 +1,58 @@
 # Preflight
 
-Preflight is a command-line tool that audits your AWS account and tells you what's worth fixing. It looks at how you deploy, what you're spending, and how much of your infrastructure depends on one or two people, then prints you a report you can read, diff, or paste into a ticket.
-
-It's read-only and open source (Apache-2.0), and it runs on your own machine. Your AWS credentials stay there.
+Preflight audits your AWS account and tells you what's worth fixing. It's read-only, open source (Apache-2.0), and runs on your own machine — your credentials stay there, and nothing leaves.
 
 We're [Jet1](https://jetonecloud.com), a managed DevOps team for startups that haven't hired a DevOps engineer yet. Preflight is the audit we run on every first call, packaged so you can run it yourself.
 
 ## Getting started
 
-Install it:
-
 ```sh
 curl -fsSL https://jetonecloud.com/preflight | sh
+preflight demo     # see what a report looks like, no account needed
 ```
 
-You can also install it with `pipx`, `brew`, or Docker (see [`docs/installation.md`](docs/installation.md)). If you don't have the AWS CLI set up locally, you can [run it from AWS CloudShell](docs/cloudshell.md) instead.
+`pipx`, `uv`, Homebrew and Docker work too — see [`docs/installation.md`](docs/installation.md). No AWS CLI locally? [Run it from CloudShell](docs/cloudshell.md).
 
-To see what a report looks like before pointing it at your account:
+## Scanning your account
+
+1. **Generate the role.** This step makes no AWS calls and needs no credentials, so you can read the whole template first:
+
+   ```sh
+   preflight scan --modules cost --save
+   ```
+
+   Run `preflight scan` with no flags and it asks instead — which checks to run, then which permissions to grant them. You get a CloudFormation template with only the read-only actions those checks declare; `--services ec2,rds` narrows it further. ([`iam/role.cfn.yaml`](iam/role.cfn.yaml) is the same thing with everything selected.)
+
+2. **Deploy it** from the CloudFormation console or with `aws cloudformation deploy`, and grab the stack's `RoleArn` output.
+
+3. **Log in as you normally do** (`aws sso login`, a named profile) and scan:
+
+   ```sh
+   preflight scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole
+   ```
+
+Preflight lists every call it's going to make and asks before making any of them. Leave `--region` off and it scans every region the account has enabled — waste tends to be in the region you've forgotten about.
+
+Don't want to create the role? `--profile my-profile`, or `--current` for CloudShell, env vars or an instance role. Preflight will say so when you're scanning as something broader than it needs — the root user especially.
+
+## Where the report goes
+
+Same report either way, off the same scan:
+
+- **In the terminal** (the default) — a section at a time, arrow keys to move, `a` for the whole thing, `q` to leave. Plain ASCII tables. Down a pipe or in CI, every section just prints in order.
+- **As a PDF**, for when the person who needs to read it isn't the person who ran it. Paginated, with a contents page and every finding in full. Set in Times, black on white: a document to read and argue about, not a dashboard. Preflight writes it directly — no browser, no rendering engine, no links out, nothing fetched when it's opened.
+
+Alongside either, a versioned JSON export you can diff between scans.
 
 ```sh
-preflight demo
+preflight scan --role-arn <arn> --pdf            # PDF instead of paging it here
+preflight scan --role-arn <arn> --terminal       # here, without being asked
+preflight scan --role-arn <arn> --pdf --no-json  # the PDF and nothing else
 ```
 
-When you're ready to scan for real:
-
-1. Pick what you want checked and generate the role it needs:
-
-```sh
-preflight scan --modules cost --save
-```
-
-   Run `preflight scan` on its own and it'll ask instead: first which checks to run, then which permissions to grant them. Every service the checks need starts selected, and you can switch any of them off with the arrow keys — `--services ec2,rds` does the same thing without the questions. Either way you get a CloudFormation template granting only the read-only actions those checks declare — nothing for the modules you didn't pick. This step makes no AWS calls and needs no credentials, so you can read the whole template before anything touches your account. ([`iam/role.cfn.yaml`](iam/role.cfn.yaml) is the same thing with every module selected.)
-
-2. Deploy the template from the CloudFormation console, or with `aws cloudformation deploy`. The stack's `RoleArn` output is what you pass back to Preflight.
-3. Log in to AWS the way you usually do (`aws sso login`, a named profile, and so on). Preflight won't ask you for access keys.
-4. Run the scan with the role ARN from the stack's outputs:
-
-```sh
-preflight scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole --region us-east-1
-```
-
-Before it starts, Preflight lists every call it's going to make and asks before making any of them. When it's done it tells you what it found, where the JSON export went, and then shows you the report itself — a section at a time, arrow keys to move between them, `a` to print the whole thing at once and `q` to leave. Plain ASCII tables, no colours required. Down a pipe or in CI there's nothing to press: every section is printed in order. `--no-json` skips the file if you only want the terminal copy. Leave `--region` off and it scans every region the account has enabled — waste tends to be in the region you've forgotten about.
-
-If you'd rather not create the role, you can scan with an existing profile, or with whatever credentials are already in the environment:
-
-```sh
-preflight scan --profile my-profile --region us-east-1
-preflight scan --current           # CloudShell, env vars, an instance role
-```
-
-Preflight will tell you when you're scanning as something broader than it needs — the root user especially — and recommend the dedicated role instead.
+Each flag answers one question, so `--pdf` alone still asks about the JSON. Where there's nobody to ask — a pipe, CI, `--yes` — you get the terminal report and the JSON. `--out <dir>` puts the files somewhere else.
 
 ## What the Cost Check looks for
-
-Nine checks, and what each one costs you:
 
 | Check | Looks for |
 |---|---|
@@ -67,43 +66,37 @@ Nine checks, and what each one costs you:
 | Old manual database snapshots | Manual RDS snapshots nobody is going to restore |
 | Instances bigger than their workload | Running instances whose peak CPU never approaches what they're paying for |
 
-Every finding shows its own arithmetic — "500 GB of gp3 at $0.08/GB-month" — so you can check any figure yourself. Estimates use us-east-1 list prices, which are the lowest AWS charges, and ignore any Savings Plans or Reserved Instances you have; they're meant to be numbers you'd be comfortable defending, not the biggest ones we could justify.
+Every finding shows its own arithmetic — "500 GB of gp3 at $0.08/GB-month" — so you can check any figure yourself. Estimates use us-east-1 list prices and ignore Savings Plans and Reserved Instances: numbers you'd be comfortable defending, not the biggest ones we could justify.
 
-Checks keep quiet when they aren't sure. A volume detached three days ago is a migration in progress; a snapshot an AMI depends on is load-bearing; an instance with one busy hour a day is correctly sized. [`docs/cost-check.md`](docs/cost-check.md) has the full list of thresholds and guards.
-
-Already decided about something? Tag it `preflight:ignore` and no check will mention it again.
+Checks keep quiet when they aren't sure. A volume detached three days ago is a migration in progress; a snapshot an AMI depends on is load-bearing. [`docs/cost-check.md`](docs/cost-check.md) has the thresholds and guards. Already decided about something? Tag it `preflight:ignore` and no check will mention it again.
 
 ```sh
-preflight scan --list-checks                      # the checks, and the permissions each needs
+preflight scan --list-checks                      # the checks, and what each one needs
 preflight scan --role-arn <arn> --only idle-nat-gateways
 preflight scan --role-arn <arn> --days 30         # a longer look at usage
-preflight scan --role-arn <arn> --redact          # a report you can share without sharing your account
+preflight scan --role-arn <arn> --redact          # shareable without sharing your account
 ```
 
 ## Permissions and your data
 
-The IAM policy in [`iam/policy.json`](iam/policy.json) only uses `Get`, `List`, and `Describe` actions, with no wildcards. Each check declares the actions it needs, so the role Preflight generates covers the checks you picked and nothing else — `preflight scan --list-checks` shows exactly which call belongs to which check, and the permission picker lets you cut it down further by service. Nothing with a write verb or a wildcard can reach a generated policy; Preflight refuses to emit one.
+[`iam/policy.json`](iam/policy.json) uses only `Get`, `List` and `Describe` actions, with no wildcards. Each check declares what it needs, so a generated role covers the checks you picked and nothing else — Preflight refuses to emit a policy containing a write verb or a wildcard.
 
-That declaration isn't just documentation. While a check runs, it's only allowed to make the calls it declared — anything else is a hard error rather than a quiet extra read — so the permissions you approved and the calls Preflight makes can't drift apart. If a permission is missing, the check that needed it is reported as **skipped**, naming the action, in the terminal and in the report. Nothing is quietly left out.
+That declaration is enforced at runtime too: a check may only make the calls it declared, and anything else is a hard error rather than a quiet extra read. If a permission is missing, the check is reported as **skipped** with the action named. Nothing is quietly left out.
 
-Preflight uses the standard AWS credential chain (profiles, SSO, STS, assume-role). It never handles your keys directly and never sends credentials anywhere.
+Preflight uses the standard AWS credential chain (profiles, SSO, STS, assume-role) and never handles your keys directly. A scan reads AWS, prints the report, and writes the local files you asked for — no telemetry, no upload, nothing to opt out of. `--redact` replaces every account and resource identifier with a stable pseudonym, leaving the findings and arithmetic intact.
 
-Nothing leaves your machine. A scan reads AWS, prints the report, and writes one local JSON file, and that's all it does — there is no telemetry, no upload, and nothing to opt out of. If you want to share a report without sharing your account, `--redact` replaces every account and resource identifier with a stable pseudonym and leaves the findings and the arithmetic intact.
+Email delivery, and the `preflight preview` command that would show you the exact payload first, are planned and not built yet — `preflight preview` currently does nothing.
 
-(Emailing yourself a copy of the report, and the `preflight preview` command that would show you the exact payload first, are planned and not built yet. `preflight preview` currently does nothing.)
-
-The dollar figures in the report are estimates. We keep them on the conservative side, and each one shows how it was worked out — see [`docs/cost-check.md`](docs/cost-check.md#how-the-money-is-worked-out).
-
-Releases are signed and come with checksums, so you can verify what you're running. [`SECURITY.md`](SECURITY.md) has the full details on data handling and our threat model.
+Releases are signed and come with checksums. [`SECURITY.md`](SECURITY.md) has the full data-handling details and our threat model.
 
 ## Contributing
 
-Contributions are welcome. Have a look at [`CONTRIBUTING.md`](CONTRIBUTING.md) and our [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) first.
+Welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## License
 
-Apache License 2.0, see [`LICENSE`](LICENSE). Some of the check logic is adapted from other Apache-2.0 and MIT-licensed projects, and they're credited in [`NOTICE`](NOTICE).
+Apache License 2.0, see [`LICENSE`](LICENSE). Some check logic is adapted from other Apache-2.0 and MIT-licensed projects, credited in [`NOTICE`](NOTICE).
 
 ## Want help fixing what it finds?
 
-That's what we do at [Jet1](https://jetonecloud.com): deploys, AWS infrastructure, cost work, and on-call, with an SLA, and you own everything we build. If you'd like to talk it through with an engineer, [book a 20-minute call](https://jetonecloud.com/book).
+That's what we do at [Jet1](https://jetonecloud.com): deploys, AWS infrastructure, cost work, and on-call, with an SLA, and you own everything we build. [Book a 20-minute call](https://jetonecloud.com/book).
