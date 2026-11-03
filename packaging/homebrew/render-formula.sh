@@ -22,7 +22,9 @@ fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
 version="${1:-}"
 sums="${2:-}"
 
-[ -n "$version" ] && [ -n "$sums" ] || fail "usage: $0 <version> <checksums.txt>"
+if [ -z "$version" ] || [ -z "$sums" ]; then
+  fail "usage: $0 <version> <checksums.txt>"
+fi
 [ -f "$sums" ] || fail "no such file: $sums"
 [ -f "$template" ] || fail "no such template: $template"
 
