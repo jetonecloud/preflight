@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
@@ -322,16 +323,113 @@ def _short(path: Path) -> str:
         return str(path)
 
 
-def _deliver(result: Any, out: Path | None, *, save_json: bool = True) -> None:
-    """Write the JSON copy, say what we found and where it went, then show it.
+#: Where a finished report can go. One of these, not a combination: the
+#: terminal report and the PDF are the same report, and nobody wants to read
+#: it twice. Order is the order they're offered in, and the first is the
+#: default - which keeps a plain `preflight scan` doing what it did before.
+FORMATS: tuple[tuple[str, str, str], ...] = (
+    ("terminal", "Terminal", "read it here, a section at a time"),
+    ("pdf", "PDF", "a file you can read later or send someone"),
+)
 
-    The file is written before anything is printed, so the line that names
-    it is a fact rather than an intention.
+TERMINAL, PDF = (key for key, _name, _blurb in FORMATS)
+
+
+@dataclass(frozen=True)
+class Delivery:
+    """What a finished scan should produce."""
+
+    format: str = TERMINAL
+    json: bool = True
+
+    @property
+    def as_pdf(self) -> bool:
+        return self.format == PDF
+
+
+def _prompt_for_delivery(*, json_wanted: bool) -> Delivery:
+    """Ask where the report should go, and whether to keep the JSON too.
+
+    Asked before the account is read rather than after, so a scan nobody is
+    watching finishes by writing files instead of stopping on a question
+    with the findings still only in memory.
     """
-    from preflight.core import report
+    chosen = _prompt_for_format()
+    ui.console.print()
+    keep_json = json_wanted and _confirm("Save the JSON export as well?", default=True)
+    ui.console.print()
+    return Delivery(format=chosen, json=keep_json)
 
-    path = report.write(result, out or Path.cwd()) if save_json else None
-    ui.show_report(result, json_path=_short(path) if path else None)
+
+def _prompt_for_format() -> str:
+    """One format: the arrow keys where we can read them, typed otherwise."""
+    if keys.supported():
+        return _arrow_format_picker()
+    ui.print_formats(FORMATS, 0)
+    names = [key for key, _name, _blurb in FORMATS]
+    answer = _ask("Report as", default=TERMINAL, choices=names)
+    return answer.strip().lower()
+
+
+def _arrow_format_picker() -> str:
+    """Up/Down to move, Enter to choose, redrawn in place as the cursor moves."""
+    cursor = 0
+    drawn = 0
+    while True:
+        drawn = ui.print_formats(FORMATS, cursor, rewind=drawn)
+        try:
+            key = keys.read_key()
+        except (EOFError, KeyboardInterrupt):
+            _abandoned()
+        if key == keys.UP:
+            cursor = (cursor - 1) % len(FORMATS)
+        elif key == keys.DOWN:
+            cursor = (cursor + 1) % len(FORMATS)
+        elif key in (keys.ENTER, keys.SPACE):
+            ui.print_chose(FORMATS[cursor][1])
+            return FORMATS[cursor][0]
+
+
+def _resolve_delivery(*, as_pdf: bool, terminal: bool, no_json: bool, ask: bool) -> Delivery:
+    """What to produce: what the flags said, or what the questions settle.
+
+    A flag for either half of it answers that half, so `--pdf` on its own
+    still asks about the JSON and `--no-json` on its own still asks where
+    the report goes. With nothing to ask on - a pipe, CI, `--yes` - the
+    defaults are what they have always been: the terminal, and the JSON.
+    """
+    if as_pdf and terminal:
+        _fail("--pdf and --terminal ask for different things.", code=2)
+    if not ask:
+        return Delivery(format=PDF if as_pdf else TERMINAL, json=not no_json)
+    if as_pdf or terminal:
+        chosen = PDF if as_pdf else TERMINAL
+        keep_json = not no_json and _confirm("Save the JSON export as well?", default=True)
+        ui.console.print()
+        return Delivery(format=chosen, json=keep_json)
+    return _prompt_for_delivery(json_wanted=not no_json)
+
+
+def _deliver(result: Any, out: Path | None, delivery: Delivery) -> None:
+    """Write whatever was asked for, say what we found, and where it went.
+
+    Files are written before anything is printed, so the line that names one
+    is a fact rather than an intention.
+    """
+    from preflight.core import paper, report
+
+    directory = out or Path.cwd()
+    json_path = report.write(result, directory) if delivery.json else None
+    if delivery.as_pdf:
+        written = paper.write(result, directory)
+        ui.print_delivered(
+            result,
+            pdf_path=_short(written.path),
+            json_path=_short(json_path) if json_path else None,
+            pages=written.pages,
+        )
+    else:
+        ui.show_report(result, json_path=_short(json_path) if json_path else None)
     ui.print_scan_footer(result.seconds)
 
 
@@ -351,6 +449,14 @@ def demo(
         bool,
         typer.Option("--no-json", help="Print the sample report without writing the JSON export."),
     ] = False,
+    as_pdf: Annotated[
+        bool,
+        typer.Option("--pdf", help="Write the sample report as a PDF instead of printing it."),
+    ] = False,
+    terminal: Annotated[
+        bool,
+        typer.Option("--terminal", help="Print the sample report here, without asking."),
+    ] = False,
 ) -> None:
     """Print a sample report, with no AWS account and no credentials.
 
@@ -365,6 +471,13 @@ def demo(
 
     ui.console.print(
         "  [dim]Sample data for a made-up account. No AWS calls, no credentials.[/dim]\n"
+    )
+
+    delivery = _resolve_delivery(
+        as_pdf=as_pdf,
+        terminal=terminal,
+        no_json=no_json,
+        ask=_interactive(),
     )
 
     def starting(check: Any, status: Any) -> None:
@@ -387,7 +500,7 @@ def demo(
     # A beat between the last check and the total, so the number lands on a
     # screen the reader has finished with rather than one still filling.
     ui.pause(DEMO_PACE * 2)
-    _deliver(result, out, save_json=not no_json)
+    _deliver(result, out, delivery)
 
 
 def _modules_for_scan(raw: str | None) -> tuple[Module, ...]:
@@ -460,7 +573,9 @@ def _audit(
     days: int,
     only: str | None,
     out: Path | None,
-    save_json: bool,
+    no_json: bool,
+    as_pdf: bool,
+    terminal: bool,
     redact: bool,
     yes: bool,
 ) -> None:
@@ -511,6 +626,15 @@ def _audit(
         if wanted_checks is None or check.key in wanted_checks
     ]
     ui.print_plan(selected, checks, plan.regions, lookback_days=days, region_note=plan.note)
+
+    # Settled before the account is read, so the last thing asked is still
+    # "go" and the scan can finish on its own.
+    delivery = _resolve_delivery(
+        as_pdf=as_pdf,
+        terminal=terminal,
+        no_json=no_json,
+        ask=_interactive() and not yes,
+    )
 
     if not yes:
         if not _interactive():
@@ -565,7 +689,7 @@ def _audit(
     )
     if redact:
         result = result.redact()
-    _deliver(result, out, save_json=save_json)
+    _deliver(result, out, delivery)
 
 
 def _read_spend(session: Any, modules: tuple[Module, ...], reader: Any) -> Any:
@@ -608,7 +732,7 @@ def scan(
             "--out",
             "-o",
             help="Where to write: the role template's path, or the directory "
-            "the JSON export goes in when you're scanning.",
+            "the report and the JSON export go in when you're scanning.",
             show_default=False,
         ),
     ] = None,
@@ -672,7 +796,18 @@ def scan(
     ] = False,
     no_json: Annotated[
         bool,
-        typer.Option("--no-json", help="Print the report without writing the JSON export."),
+        typer.Option("--no-json", help="Don't write the JSON export."),
+    ] = False,
+    as_pdf: Annotated[
+        bool,
+        typer.Option(
+            "--pdf",
+            help="Write the report as a PDF instead of reading it in the terminal.",
+        ),
+    ] = False,
+    terminal: Annotated[
+        bool,
+        typer.Option("--terminal", help="Read the report in the terminal, without asking."),
     ] = False,
     redact: Annotated[
         bool,
@@ -734,16 +869,21 @@ def scan(
             days=days,
             only=only,
             out=out,
-            save_json=not no_json,
+            no_json=no_json,
+            as_pdf=as_pdf,
+            terminal=terminal,
             redact=redact,
             yes=yes,
         )
         return
 
-    if region:
-        ui.print_hint(
-            "--region only applies to a scan. Add --role-arn (or --profile) to run one.\n"
-        )
+    # The other direction: flags about a report, with no scan to report on.
+    # Named rather than ignored, so nobody waits for a PDF of a role template.
+    for flag, given in (("--region", bool(region)), ("--pdf", as_pdf), ("--terminal", terminal)):
+        if given:
+            ui.print_hint(
+                f"{flag} only applies to a scan. Add --role-arn (or --profile) to run one.\n"
+            )
 
     interactive = modules is None
 

@@ -18,7 +18,8 @@ from functools import partial
 from typing import Any
 
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
+from rich.control import Control
 from rich.markup import escape
 from rich.padding import Padding
 from rich.panel import Panel
@@ -224,6 +225,65 @@ def print_permissions(
     if keys:
         console.print(_indented(f"[dim]{keys}[/dim]"))
         console.print()
+
+
+FORMAT_QUESTION = "Where do you want the report?"
+
+
+def formats_table(formats: Sequence[tuple[str, str, str]], cursor: int) -> Table:
+    """The report-format choice: one row per format, the current one marked.
+
+    No checkboxes and no numbers - this is one choice of two, so the `>`
+    against a row is the whole of the state.
+    """
+    table = Table(box=None, pad_edge=False, padding=(0, 2, 0, 0), show_header=False)
+    table.add_column(" ", width=1)
+    table.add_column("Format", style="bold", no_wrap=True)
+    table.add_column("What you get")
+
+    for index, (_key, name, blurb) in enumerate(formats):
+        here = index == cursor
+        table.add_row(
+            Text(">" if here else " ", style="bold cyan"),
+            Text(name, style="bold cyan" if here else "dim"),
+            Text(blurb, style="dim"),
+        )
+    return table
+
+
+def formats_block(formats: Sequence[tuple[str, str, str]], cursor: int) -> Group:
+    """The question and the rows, as one thing that can be measured and redrawn."""
+    return Group(
+        _indented(f"[bold]{FORMAT_QUESTION}[/bold]"),
+        Text(""),
+        formats_table(formats, cursor),
+        Text(""),
+    )
+
+
+def print_formats(formats: Sequence[tuple[str, str, str]], cursor: int, *, rewind: int = 0) -> int:
+    """Draw the picker, returning how many lines it took.
+
+    `rewind` is how many lines the last draw used: the cursor is walked back
+    up over them so the new one lands on top. Redrawing in place rather than
+    clearing the screen is what keeps the scan plan above the question - the
+    plan is the thing the next question asks you to approve, so wiping it to
+    make room for a two-line menu would be a poor trade.
+    """
+    block = formats_block(formats, cursor)
+    if rewind and console.is_terminal:
+        console.control(Control.move(0, -rewind))
+    # Measured off the render pipeline rather than by capturing a print: a
+    # capture here would be nested inside the test runner's own and swallow
+    # the output it was measuring.
+    height = len(console.render_lines(block, console.options, pad=False))
+    console.print(block)
+    return height
+
+
+def print_chose(name: str) -> None:
+    """Echo the answer, so the choice is still on screen once the menu is done with."""
+    console.print(_indented(f"[dim]Report as:[/dim] [bold]{name}[/bold]"))
 
 
 def print_checks(module: Module) -> None:
@@ -504,6 +564,22 @@ class Page:
     note: str | None = None
 
 
+def headline_sentence(result: Any) -> str:
+    """What the scan found, in one clause. The same words wherever it's said."""
+    from preflight.core.report import money, plural
+
+    if result.findings:
+        count = len(result.findings)
+        return (
+            f"[bold]{count}[/bold] {plural(count, 'finding')}, "
+            f"about [bold green]{money(result.monthly_usd)}/month[/bold green]."
+        )
+    return (
+        f"[bold]Nothing worth flagging[/bold], from "
+        f"{result.examined} {plural(result.examined, 'resource')}."
+    )
+
+
 def print_intro(result: Any, *, json_path: str | None, paged: bool, sections: int) -> None:
     """The few lines before the report: what we found, and what happens next.
 
@@ -511,21 +587,10 @@ def print_intro(result: Any, *, json_path: str | None, paged: bool, sections: in
     number, the name of the file we wrote, and to know the report is about
     to be shown to them rather than buried somewhere.
     """
-    from preflight.core.report import money, plural
+    from preflight.core.report import plural
 
     console.print()
-    if result.findings:
-        count = len(result.findings)
-        headline = (
-            f"[bold]{count}[/bold] {plural(count, 'finding')}, "
-            f"about [bold green]{money(result.monthly_usd)}/month[/bold green]."
-        )
-    else:
-        headline = (
-            f"[bold]Nothing worth flagging[/bold], from "
-            f"{result.examined} {plural(result.examined, 'resource')}."
-        )
-    console.print(_indented(f"Done. {headline}"))
+    console.print(_indented(f"Done. {headline_sentence(result)}"))
     if json_path:
         console.print(_indented(f"[dim]JSON saved to[/dim] [cyan]{json_path}[/cyan]"))
     console.print()
@@ -542,6 +607,47 @@ def print_intro(result: Any, *, json_path: str | None, paged: bool, sections: in
     else:
         console.print(_indented("[dim]The report follows.[/dim]"))
     console.print()
+
+
+def print_delivered(result: Any, *, pdf_path: str, json_path: str | None, pages: int) -> None:
+    """What we found and where it went, when the report went to a file.
+
+    The reader asked for the PDF rather than the terminal, so the terminal's
+    job here is only to say the number and name the files - but it does say
+    the number, because somebody who just scanned their own account
+    shouldn't have to open a PDF to find out whether it's bad news.
+    """
+    from preflight.core.report import plural
+
+    console.print()
+    console.print(_indented(f"Done. {headline_sentence(result)}"))
+    console.print()
+    console.print(
+        Panel(
+            Text.assemble(
+                ("OK ", "bold green"),
+                ("Saved the report\n", "bold"),
+                (pdf_path, "bold cyan"),
+                (f"  -  {pages} {plural(pages, 'page')}", "dim"),
+            ),
+            box=BOX,
+            border_style="green",
+            padding=(0, 2),
+            expand=False,
+        )
+    )
+    console.print()
+    if json_path:
+        console.print(_indented(f"[dim]JSON export[/dim] [cyan]{json_path}[/cyan]"))
+    console.print(
+        _indented(
+            "[dim]Nothing in it is fetched when it's opened: no fonts, no scripts, "
+            "no links out.[/dim]"
+        )
+    )
+    console.print(
+        _indented("[dim]Same report here in the terminal instead: [/dim][bold]--terminal[/bold]\n")
+    )
 
 
 #: How to drive the pager, said the same way everywhere it's said.

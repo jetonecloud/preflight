@@ -187,6 +187,15 @@ def test_region_without_credentials_still_generates_a_role(workdir):
     assert (workdir / DEFAULT_FILENAME).exists()
 
 
+def test_a_report_format_without_credentials_says_there_is_no_report(workdir):
+    """Nobody should be left waiting for a PDF of a role template."""
+    result = invoke("scan", "-m", "cost", "--save", "--pdf")
+    assert result.exit_code == 0
+    assert "--pdf only applies to a scan" in result.stderr
+    assert (workdir / DEFAULT_FILENAME).exists()
+    assert not list(workdir.glob("*.pdf"))
+
+
 def test_listing_checks_needs_no_credentials():
     result = invoke("scan", "--list-checks")
     assert result.exit_code == 0
