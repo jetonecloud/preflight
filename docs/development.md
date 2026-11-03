@@ -134,6 +134,10 @@ CI runs the same lint and tests, plus a check that
 | [`src/preflight/core/findings.py`](../src/preflight/core/findings.py) | `Finding`, `Severity`, `Confidence`, `Estimate` |
 | [`src/preflight/core/report.py`](../src/preflight/core/report.py) | `ScanResult` and the JSON schema |
 | [`src/preflight/ui.py`](../src/preflight/ui.py) | Everything printed: the pickers, and the report and its pager |
+| [`src/preflight/core/paper.py`](../src/preflight/core/paper.py) | The same report, laid out on pages, for the PDF |
+| [`src/preflight/core/pdf.py`](../src/preflight/core/pdf.py) | The PDF writer: text, rules, tables, images, and the object graph. No dependencies |
+| [`src/preflight/core/brand.py`](../src/preflight/core/brand.py) | Who made it, and the mark the PDF draws |
+| [`src/preflight/assets/`](../src/preflight/assets/) | `jet1-mark.png` — add new asset files to `--add-data` in `release.yml` too |
 | [`src/preflight/templates/`](../src/preflight/templates/) | `role.cfn.yaml.j2`, the generated IAM role |
 | [`src/preflight/demo.py`](../src/preflight/demo.py) | The sample account |
 | [`docs/cost-check.md`](cost-check.md) | Full reference: thresholds, guards, methodology |

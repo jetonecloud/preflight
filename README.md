@@ -1,8 +1,8 @@
 # Preflight
 
-Preflight audits your AWS account and tells you what's worth fixing. It's read-only, open source (Apache-2.0), and runs on your own machine — your credentials stay there, and nothing leaves.
+Preflight is a command-line tool that audits your AWS account and tells you what's worth fixing. It looks at how you deploy, what you're spending, and how much of your infrastructure depends on one or two people, then prints you a report you can read, diff, or paste into a ticket.
 
-We're [Jet1](https://jetonecloud.com), a managed DevOps team for startups that haven't hired a DevOps engineer yet. Preflight is the audit we run on every first call, packaged so you can run it yourself.
+It's read-only and open source (Apache-2.0), and it runs on your own machine. Your AWS credentials stay there.
 
 ## Getting started
 
@@ -40,7 +40,7 @@ Don't want to create the role? `--profile my-profile`, or `--current` for CloudS
 Same report either way, off the same scan:
 
 - **In the terminal** (the default) — a section at a time, arrow keys to move, `a` for the whole thing, `q` to leave. Plain ASCII tables. Down a pipe or in CI, every section just prints in order.
-- **As a PDF**, for when the person who needs to read it isn't the person who ran it. Paginated, with a contents page and every finding in full. Set in Times, black on white: a document to read and argue about, not a dashboard. Preflight writes it directly — no browser, no rendering engine, no links out, nothing fetched when it's opened.
+- **As a PDF**, for when the person who needs to read it isn't the person who ran it. Paginated, with a contents page and every finding in full. Set in Helvetica, with a teal accent and severity in colour: a document to read and argue about, not a dashboard. Preflight writes it directly — no browser, no rendering engine, no links out, nothing fetched when it's opened.
 
 Alongside either, a versioned JSON export you can diff between scans.
 
