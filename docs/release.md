@@ -4,7 +4,7 @@
 
 Pushing a `v*` tag runs [`.github/workflows/release.yml`](../.github/workflows/release.yml):
 
-1. **ci** — the whole of `ci.yml` (lint, shellcheck, tests on 3.11 and 3.12, the IAM policy check) runs again against the tagged commit. Nothing ships if it fails.
+1. **ci** — the whole of `ci.yml` (lint, shellcheck, tests on 3.11 through 3.14, the image build and its smoke test, the IAM policy check) runs again against the tagged commit. Nothing ships if it fails.
 2. **version-check** — the tag must match `preflight.__version__`. `v0.2.0` with a package that still says `0.1.0` fails here rather than shipping a binary that misreports itself.
 3. **build** — PyInstaller produces one self-contained binary per platform (linux x86_64/aarch64, macOS x86_64/arm64), each smoke-tested by actually generating a role template with it.
 4. **publish** — collects the binaries, writes `checksums.txt`, attaches a signed build provenance attestation, and creates the GitHub Release with `install.sh` alongside the binaries.

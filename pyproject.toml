@@ -1,6 +1,6 @@
 [project]
 name = "preflight-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Free, open-source, read-only AWS audit CLI. Find the first three things to fix in deploys, cost, and bus factor."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -12,6 +12,8 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Intended Audience :: Developers",
   "Topic :: System :: Systems Administration",
 ]
