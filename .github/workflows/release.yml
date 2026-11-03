@@ -159,6 +159,129 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+  publish-docker:
+    # Makes `docker run ghcr.io/jetonecloud/preflight` real. No secret to
+    # set: GHCR takes the workflow's own token. The package it creates is
+    # private until somebody makes it public once, by hand — see
+    # docs/release.md.
+    #
+    # Built from the wheel, not the PyInstaller binaries, so it doesn't need
+    # them — but it waits for them anyway, because half a release is worse
+    # than a late one.
+    needs: [build, version-check]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+      id-token: write # OIDC, for build provenance
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # v0.2.0 publishes 0.2.0, 0.2 and latest. A prerelease tag
+          # (v0.3.0-rc1) publishes itself and leaves latest where it is.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest what built this image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  publish-homebrew:
+    # Makes `brew install jetonecloud/tap/preflight` real, by committing a
+    # rendered formula to the tap repository.
+    #
+    # Switched on by two repository settings, because the tap is a different
+    # repo and the workflow's own token can't write to it:
+    #
+    #   variable HOMEBREW_TAP        e.g. jetonecloud/homebrew-tap
+    #   secret   HOMEBREW_TAP_TOKEN  a token with contents:write on that repo
+    #
+    # With the variable unset, the release skips this job rather than failing
+    # it — the tap is optional, the release isn't. (The `if` tests the
+    # variable rather than the secret because secrets aren't available in a
+    # job-level condition.)
+    #
+    # Waits for `publish`: a formula is a URL plus a checksum, so pushing it
+    # before the assets exist would hand everyone a 404.
+    needs: [publish]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && vars.HOMEBREW_TAP != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: preflight-*
+          merge-multiple: true
+
+      - name: Check out the tap
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.HOMEBREW_TAP }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Render the formula
+        # The checksums come from the same artifacts `publish` uploaded, so
+        # the formula and checksums.txt can't disagree about what shipped.
+        run: |
+          set -eu
+          cd dist
+          sha256sum preflight-* > checksums.txt
+          cd ..
+          mkdir -p tap/Formula
+          sh packaging/homebrew/render-formula.sh \
+            "${GITHUB_REF_NAME}" dist/checksums.txt > tap/Formula/preflight.rb
+          cat tap/Formula/preflight.rb
+
+      - name: Commit it to the tap
+        run: |
+          set -eu
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/preflight.rb
+          if git diff --cached --quiet; then
+            echo "The tap already has this formula. Nothing to do."
+            exit 0
+          fi
+          git commit -m "preflight ${GITHUB_REF_NAME#v}"
+          git push
+
   publish-pypi:
     # Makes `pipx install preflight-cli` and `uv tool install preflight-cli`
     # real. Needs a PyPI trusted publisher for this repo + workflow; delete

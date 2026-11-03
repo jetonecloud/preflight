@@ -23,12 +23,50 @@ jobs:
 
   install-script:
     # The installer is what most people will actually run, so hold it to the
-    # same bar as the Python: POSIX sh only, no shellcheck warnings.
+    # same bar as the Python: POSIX sh only, no shellcheck warnings. The
+    # formula renderer gets the same treatment — it runs on a release, where
+    # a shell bug is expensive and nobody is watching.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck --shell=sh install.sh
+      - run: shellcheck --shell=sh install.sh packaging/homebrew/render-formula.sh
       - run: sh -n install.sh
+      - run: sh -n packaging/homebrew/render-formula.sh
+
+  docker:
+    # The image is published on release, so a Dockerfile that stopped
+    # building would otherwise be discovered at the worst possible moment.
+    # One architecture here, both of them on release: this is about whether
+    # the thing builds and runs, not about QEMU.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: preflight:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the image
+        # The same bar as the binary's smoke test: it starts, it runs the
+        # real checks, and it writes a PDF. Plus the two things that are
+        # specific to a container — that it isn't root, and that the
+        # documented bind mount lands files on the host.
+        run: |
+          set -eu
+          docker run --rm preflight:ci --version
+          docker run --rm --entrypoint id preflight:ci -un | grep -qx preflight
+          docker run --rm --entrypoint sh preflight:ci -c \
+            'preflight demo --pdf --no-json && head -c 4 /out/preflight-report-*.pdf' \
+            | grep -q "%PDF"
+          mkdir -p "$RUNNER_TEMP/out"
+          chmod 777 "$RUNNER_TEMP/out"
+          docker run --rm -v "$RUNNER_TEMP/out:/out" preflight:ci demo --pdf
+          ls "$RUNNER_TEMP/out"/preflight-report-*.pdf
+          ls "$RUNNER_TEMP/out"/preflight-report-*.json
 
   test:
     runs-on: ubuntu-latest
