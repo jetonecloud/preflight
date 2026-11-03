@@ -76,9 +76,11 @@ jobs:
           uv pip install pyinstaller
 
       - name: Build a single-file binary
-        # --add-data is load-bearing: core/cfn.py reads the CloudFormation
-        # template through importlib.resources, which finds nothing in a
-        # frozen bundle unless the file is copied in alongside the package.
+        # --add-data is load-bearing twice over: core/cfn.py reads the
+        # CloudFormation template and core/brand.py reads the Jet1 mark that
+        # goes in the PDF, both through importlib.resources, which finds
+        # nothing in a frozen bundle unless the file is copied in alongside
+        # the package.
         #
         # boto3 needs no flags here. Nothing imports it yet, so it isn't
         # bundled at all; once the checks do, PyInstaller's bundled
@@ -90,11 +92,13 @@ jobs:
             --name preflight \
             --paths src \
             --add-data "src/preflight/templates/role.cfn.yaml.j2:preflight/templates" \
+            --add-data "src/preflight/assets/jet1-mark.png:preflight/assets" \
             src/preflight/cli.py
 
       - name: Smoke-test the binary
-        # Catches a missing template, a missing boto3 data file, and a binary
-        # that can't start at all — none of which the test suite can see.
+        # Catches a missing template, a missing logo, a missing boto3 data
+        # file, and a binary that can't start at all — none of which the
+        # test suite can see.
         run: |
           set -eu
           ./dist/preflight --help > /dev/null
@@ -103,6 +107,8 @@ jobs:
           ./dist/preflight scan -m cost --services ec2 --print | grep -q "ec2:DescribeVolumes"
           ./dist/preflight scan -m cost --out "$RUNNER_TEMP/role.yaml"
           grep -q "PreflightReadOnlyRole" "$RUNNER_TEMP/role.yaml"
+          ./dist/preflight demo --pdf --no-json --out "$RUNNER_TEMP/report"
+          head -c 4 "$RUNNER_TEMP/report"/preflight-report-*.pdf | grep -q "%PDF"
           echo "binary works on ${{ matrix.target }}"
 
       - name: Name the asset after its platform
