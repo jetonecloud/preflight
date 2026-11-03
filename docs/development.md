@@ -140,5 +140,7 @@ CI runs the same lint and tests, plus a check that
 | [`src/preflight/assets/`](../src/preflight/assets/) | `jet1-mark.png` — add new asset files to `--add-data` in `release.yml` too |
 | [`src/preflight/templates/`](../src/preflight/templates/) | `role.cfn.yaml.j2`, the generated IAM role |
 | [`src/preflight/demo.py`](../src/preflight/demo.py) | The sample account |
+| [`Dockerfile`](../Dockerfile) | The container image: the wheel in a venv, running as uid 1000 |
+| [`packaging/homebrew/`](../packaging/homebrew/) | The formula template and the script that renders it for a release |
 | [`docs/cost-check.md`](cost-check.md) | Full reference: thresholds, guards, methodology |
-| [`docs/release.md`](release.md) | How a tag becomes signed binaries and a PyPI release |
+| [`docs/release.md`](release.md) | How a tag becomes binaries, a wheel, an image and a formula |

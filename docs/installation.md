@@ -58,24 +58,61 @@ uvx --from preflight-cli preflight demo
 brew install jetonecloud/tap/preflight
 ```
 
+That taps [`jetonecloud/homebrew-tap`](https://github.com/jetonecloud/homebrew-tap)
+the first time and installs the same prebuilt binary the installer downloads,
+checksum and all — no Python, no compiling. macOS and Linux, Intel and ARM.
+
 ## Docker
 
 Useful when you'd rather not install anything, or when you want the scan to
 run somewhere with no access to the rest of your machine. Mount your AWS
-config read-only and a directory for the JSON export to land in:
+config read-only and a directory for the report to land in:
 
 ```sh
 docker run --rm \
-  -v "$HOME/.aws:/root/.aws:ro" \
+  -v "$HOME/.aws:/home/preflight/.aws:ro" \
   -v "$PWD:/out" \
   -e AWS_PROFILE \
   ghcr.io/jetonecloud/preflight:latest \
   scan --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole \
-       --out /out --yes
+       --yes
+```
+
+`preflight` is the image's entrypoint, so everything after the image name is
+the usual command line: `demo`, `scan --list-checks`, `--pdf`, any of it.
+
+Nothing in the image runs as root. It runs as the `preflight` user, uid 1000,
+whose home is `/home/preflight` — that's why the AWS config goes there rather
+than in `/root`. The working directory is `/out`, which is where a report is
+written by default, so `-v "$PWD:/out"` puts the files in the directory you
+ran the command from, owned by you.
+
+If your own uid isn't 1000, the bind mount may be unreadable or the output
+directory unwritable. Run as yourself instead, and say where home is:
+
+```sh
+docker run --rm \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$HOME/.aws:/tmp/.aws:ro" \
+  -v "$PWD:/out" \
+  ghcr.io/jetonecloud/preflight:latest demo --pdf
 ```
 
 For SSO profiles, make sure you've run `aws sso login` on the host first —
 the container reads the cached token out of `~/.aws`.
+
+Tags: `latest`, the full version (`0.1.0`), and the minor series (`0.1`).
+Pin the full version if a reproducible scan matters. Each image carries a
+build provenance attestation, the same as the binaries:
+
+```sh
+gh attestation verify oci://ghcr.io/jetonecloud/preflight:latest \
+  --repo jetonecloud/preflight
+```
+
+The image is built for `linux/amd64` and `linux/arm64`, from the published
+wheel rather than the standalone binary — in a container there's already a
+Python to run it.
 
 ## From source
 
