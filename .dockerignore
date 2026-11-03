@@ -1,0 +1,19 @@
+# The build stage copies what it needs by name, so this is belt and braces -
+# but it also keeps the build context small, and keeps anything local out of
+# the image by accident.
+.git
+.github
+.venv
+.local
+.ruff_cache
+.pytest_cache
+.coverage
+htmlcov
+dist
+build
+*.egg-info
+__pycache__
+*.pyc
+
+# Reports from a local scan. Never in an image we publish.
+preflight-report-*
