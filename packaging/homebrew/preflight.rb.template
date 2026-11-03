@@ -1,0 +1,57 @@
+# This file is generated. Don't edit the copy in the tap.
+#
+# The source of truth is packaging/homebrew/preflight.rb.template in
+# jetonecloud/preflight; `packaging/homebrew/render-formula.sh` fills in the
+# version and the four checksums from a release's checksums.txt, and the
+# release workflow commits the result to the tap.
+class Preflight < Formula
+  desc "Read-only AWS audit CLI: what to fix in deploys, cost, and bus factor"
+  homepage "https://github.com/jetonecloud/preflight"
+  version "@VERSION@"
+  license "Apache-2.0"
+
+  # Prebuilt binaries rather than a build from source: Preflight ships as one
+  # self-contained PyInstaller binary per platform, already smoke-tested by
+  # the release workflow, so a formula that downloaded the sdist would be
+  # testing a different artifact than everyone else installs.
+  #
+  # The URL carries the tag, not `latest`: a formula has to name the exact
+  # file its sha256 belongs to, or an upgrade upstream would fail every
+  # install here instead of just this one.
+  on_macos do
+    on_arm do
+      url "https://github.com/jetonecloud/preflight/releases/download/v@VERSION@/preflight-macos-arm64"
+      sha256 "@SHA_MACOS_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/jetonecloud/preflight/releases/download/v@VERSION@/preflight-macos-x86_64"
+      sha256 "@SHA_MACOS_X86_64@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/jetonecloud/preflight/releases/download/v@VERSION@/preflight-linux-aarch64"
+      sha256 "@SHA_LINUX_AARCH64@"
+    end
+    on_intel do
+      url "https://github.com/jetonecloud/preflight/releases/download/v@VERSION@/preflight-linux-x86_64"
+      sha256 "@SHA_LINUX_X86_64@"
+    end
+  end
+
+  def install
+    # One file, downloaded under its platform name. Whichever of the four
+    # arrived, it goes on the PATH as `preflight`.
+    bin.install Dir["preflight-*"].first => "preflight"
+  end
+
+  test do
+    # --version is on stdout on purpose, so scripts can read it.
+    assert_match version.to_s, shell_output("#{bin}/preflight --version")
+
+    # The sample report proves the binary runs its real checks, with no AWS
+    # account and no credentials. It prints to stderr, like every report.
+    assert_match "findings", shell_output("#{bin}/preflight demo --no-json 2>&1")
+  end
+end
