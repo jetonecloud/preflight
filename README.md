@@ -4,6 +4,8 @@ Preflight is a command-line tool that audits your AWS account and tells you what
 
 It's read-only and open source (Apache-2.0), and it runs on your own machine. Your AWS credentials stay there.
 
+![`preflight demo` run in a terminal, showing the checks running and the cost report](docs/assets/demo.gif)
+
 ## Getting started
 
 ```sh
