@@ -570,6 +570,8 @@ def headline_sentence(result: Any) -> str:
 
     if result.findings:
         count = len(result.findings)
+        if not result.priced:
+            return f"[bold]{count}[/bold] {plural(count, 'finding')}."
         return (
             f"[bold]{count}[/bold] {plural(count, 'finding')}, "
             f"about [bold green]{money(result.monthly_usd)}/month[/bold green]."
@@ -938,21 +940,22 @@ def print_headline(result: Any) -> None:
     share = ""
     if result.share_of_spend is not None:
         share = f" - {percent(result.share_of_spend)} of last month's bill"
-    console.print(
-        Panel(
-            Text.assemble(
-                (f"{money(result.monthly_usd)}/month", "bold green"),
-                (f"  -  {money(result.annual_usd)}/year{share}", "dim"),
-            ),
-            title="Estimated saving",
-            title_align="left",
-            box=BOX,
-            border_style="green",
-            padding=(0, 2),
-            expand=False,
+    if result.priced:
+        console.print(
+            Panel(
+                Text.assemble(
+                    (f"{money(result.monthly_usd)}/month", "bold green"),
+                    (f"  -  {money(result.annual_usd)}/year{share}", "dim"),
+                ),
+                title="Estimated saving",
+                title_align="left",
+                box=BOX,
+                border_style="green",
+                padding=(0, 2),
+                expand=False,
+            )
         )
-    )
-    console.print()
+        console.print()
 
     counts = result.by_severity
     table = Table(box=BOX, header_style="dim", border_style="dim")
@@ -972,7 +975,7 @@ def print_headline(result: Any) -> None:
 
 def print_start_here(result: Any) -> None:
     """The first few things to fix, ahead of the full list."""
-    from preflight.core.report import money
+    from preflight.core.report import per_month
 
     if not result.headline:
         return
@@ -981,11 +984,11 @@ def print_start_here(result: Any) -> None:
     )
     console.print()
     for index, finding in enumerate(result.headline, start=1):
+        cost = per_month(finding.monthly_usd)
         console.print(
             _hanging(
                 f"[cyan]{index}.[/cyan]",
-                f"[bold]{escape(finding.title)}[/bold] "
-                f"[dim]({money(finding.monthly_usd)}/month)[/dim]",
+                f"[bold]{escape(finding.title)}[/bold]" + (f" [dim]({cost})[/dim]" if cost else ""),
             )
         )
         console.print(
@@ -1032,16 +1035,14 @@ def _findings_index(rows: Sequence[tuple[int, Any]]) -> None:
 
 def _group_page(group: Any, chunk: Sequence[tuple[int, Any]]) -> None:
     """One check's findings, in full. Split across pages when there are many."""
-    from preflight.core.report import money, plural
+    from preflight.core.report import per_month, plural
 
     count = len(group["findings"])
-    console.print(
-        _indented(
-            f"[dim]{count} {plural(count, 'finding')} - "
-            f"{money(group['monthly_usd'])}/month - "
-            f"looked at {group['outcome'].examined}[/dim]"
-        )
-    )
+    parts = [f"{count} {plural(count, 'finding')}"]
+    if group["priced"]:
+        parts.append(str(per_month(group["monthly_usd"])))
+    parts.append(f"looked at {group['outcome'].examined}")
+    console.print(_indented(f"[dim]{' - '.join(parts)}[/dim]"))
     console.print(_indented(f"[dim]{escape(group['check'].looks_for)}[/dim]"))
     console.print()
     for number, finding in chunk:
@@ -1056,14 +1057,15 @@ def _severity(finding: Any) -> Text:
 
 def _print_finding(number: int, finding: Any) -> None:
     """One finding in full: what it is, the evidence, and what to do."""
-    from preflight.core.report import money
+    from preflight.core.report import per_month
 
     resource = finding.resource
+    cost = per_month(finding.monthly_usd)
     console.print(
         _hanging(
             f"[cyan]\\[{number}][/cyan]",
-            f"[bold]{escape(finding.title)}[/bold] "
-            f"[bold green]{money(finding.monthly_usd)}/month[/bold green]",
+            f"[bold]{escape(finding.title)}[/bold]"
+            + (f" [bold green]{cost}[/bold green]" if cost else ""),
         )
     )
     meta = [

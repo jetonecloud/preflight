@@ -147,7 +147,15 @@ def _cover(doc: Document, result: ScanResult) -> None:
 
     # The number gets the one panel in the report, because it is the reason
     # the report exists and the reason somebody forwarded it.
-    if result.findings:
+    if result.findings and not result.priced:
+        count = len(result.findings)
+        _headline(
+            doc,
+            "Worth a look",
+            f"{count} {plural(count, 'finding')}",
+            "None of them is a question of money, so no saving is estimated.",
+        )
+    elif result.findings:
         share = ""
         if result.share_of_spend is not None:
             share = f", or {percent(result.share_of_spend)} of last month's bill"
@@ -291,7 +299,7 @@ def _heading(doc: Document, title: str, note: str | None = None) -> None:
 
 
 def _start_here(doc: Document, result: ScanResult) -> None:
-    from preflight.core.report import money
+    from preflight.core.report import per_month
 
     if not result.headline:
         return
@@ -311,8 +319,10 @@ def _start_here(doc: Document, result: ScanResult) -> None:
             gutter=18.0,
             marker_colour=pdf.ACCENT,
         )
+        # An unpriced finding is introduced by how much it matters instead.
+        marker = per_month(finding.monthly_usd) or f"{finding.level.label} severity"
         doc.hanging(
-            f"{money(finding.monthly_usd)}/month",
+            marker,
             f"{finding.resource.label} - {finding.resource.region}",
             font=ITALIC,
             size=9.5,
@@ -320,7 +330,7 @@ def _start_here(doc: Document, result: ScanResult) -> None:
             marker_font=BOLD,
             marker_colour=_ink(finding.level),
             indent=18.0,
-            gutter=pdf.text_width(f"{money(finding.monthly_usd)}/month   ", BOLD, 9.5),
+            gutter=pdf.text_width(f"{marker}   ", BOLD, 9.5),
         )
         doc.line(finding.recommendation, size=10, indent=18.0)
         doc.space(10.0)
@@ -376,7 +386,7 @@ def _numbered(result: ScanResult) -> list[tuple[int, Any]]:
 
 def _detail(doc: Document, result: ScanResult) -> None:
     """Each check's findings in full, grouped the way the terminal groups them."""
-    from preflight.core.report import money, plural
+    from preflight.core.report import per_month, plural
 
     groups = result.groups()
     if not groups:
@@ -393,9 +403,12 @@ def _detail(doc: Document, result: ScanResult) -> None:
         doc.space(10.0)
         doc.ensure(90.0)
         doc.line(group["check"].title, font=BOLD, size=11.5, colour=pdf.ACCENT)
+        parts = [f"{count} {plural(count, 'finding')}"]
+        if group["priced"]:
+            parts.append(str(per_month(group["monthly_usd"])))
+        parts.append(f"looked at {group['outcome'].examined}")
         doc.line(
-            f"{count} {plural(count, 'finding')} - {money(group['monthly_usd'])}/month - "
-            f"looked at {group['outcome'].examined}",
+            " - ".join(parts),
             size=8.5,
             colour=pdf.DIM,
         )
@@ -408,14 +421,15 @@ def _detail(doc: Document, result: ScanResult) -> None:
 
 def _finding(doc: Document, number: int, finding: Any) -> None:
     """One finding: what it is, what it costs, the evidence, and what to do."""
-    from preflight.core.report import money
+    from preflight.core.report import per_month
 
     doc.ensure(72.0)
     resource = finding.resource
     indent = 26.0
+    cost = per_month(finding.monthly_usd)
     doc.hanging(
         f"{number}.",
-        f"{finding.title}  -  {money(finding.monthly_usd)}/month",
+        f"{finding.title}  -  {cost}" if cost else finding.title,
         font=BOLD,
         size=10.5,
         gutter=indent,

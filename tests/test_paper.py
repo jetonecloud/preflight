@@ -162,3 +162,12 @@ def test_a_reader_is_told_what_preflight_is_without_having_run_it():
     text = render(result([outcome([finding()])]))
     assert "managed DevOps team" in text
     assert "read-only AWS audit" in text
+
+
+def test_a_finding_with_no_price_is_not_given_one_on_paper_either():
+    text = render(result([outcome([finding(resource_id="ops-alerts", monthly=None)])]))
+    assert "Unattached volume ops-alerts" in text
+    assert "-/month" not in text
+    assert "1 finding - looked at" in text
+    assert "Worth a look" in text
+    assert "Estimated saving" not in text

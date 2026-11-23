@@ -342,3 +342,14 @@ def test_quitting_at_the_intro_skips_the_report(monkeypatch):
     text = captured.get()
     assert "./out.json" in text
     assert "Everything we found" not in text
+
+
+def test_a_finding_with_no_price_is_not_given_one():
+    """An alarm that pages nobody isn't free; it just isn't priced."""
+    unpriced = finding(resource_id="ops-alerts", monthly=None)
+    text = render(result([outcome([unpriced])]))
+    assert "Unattached volume ops-alerts" in text
+    assert "-/month" not in text
+    assert "$0.00/month" not in text
+    assert "1 finding - looked at" in text
+    assert "Estimated saving" not in text, "nothing priced, so no saving to estimate"

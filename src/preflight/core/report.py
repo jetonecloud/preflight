@@ -110,6 +110,16 @@ class ScanResult:
         return total_monthly(self.findings)
 
     @property
+    def priced(self) -> bool:
+        """Whether any finding carries a dollar figure.
+
+        A scan of nothing but the Observability module can find plenty and
+        price none of it, and "$0.00/month" would read as "nothing to save"
+        rather than "not a question of money".
+        """
+        return any(finding.estimate is not None for finding in self.findings)
+
+    @property
     def annual_usd(self) -> float:
         return self.monthly_usd * 12
 
@@ -176,6 +186,9 @@ class ScanResult:
                     "outcome": outcome,
                     "findings": findings,
                     "monthly_usd": total_monthly(findings),
+                    # A check that prices nothing - an alarm that pages
+                    # nobody - shouldn't be headed "$0.00/month".
+                    "priced": any(finding.estimate is not None for finding in findings),
                 }
             )
         grouped.sort(key=lambda group: -group["monthly_usd"])
@@ -280,6 +293,15 @@ def money(amount: float | None, *, precise: bool = False) -> str:
     if precise or abs(amount) < 10:
         return f"${amount:,.2f}"
     return f"${amount:,.0f}"
+
+
+def per_month(amount: float | None) -> str | None:
+    """`$40/month`, or `None` for a finding that carries no dollar figure.
+
+    Callers leave the figure out rather than print `-/month`: an unpriced
+    finding isn't missing a number, it never had one.
+    """
+    return None if amount is None else f"{money(amount)}/month"
 
 
 def percent(fraction: float | None) -> str:

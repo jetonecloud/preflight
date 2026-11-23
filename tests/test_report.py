@@ -31,6 +31,7 @@ from preflight.core.report import (
     Account,
     ScanResult,
     money,
+    per_month,
     percent,
     plural,
 )
@@ -361,3 +362,17 @@ def test_the_report_knows_when_it_was_run():
     assert result().started_at < result().finished_at or True
     assert isinstance(result().finished_at, datetime)
     assert result().finished_at.tzinfo is UTC
+
+
+def test_a_group_knows_whether_anything_in_it_was_priced():
+    priced = outcome([finding()])
+    unpriced = outcome([finding(monthly=None)], check=COST.checks[1])
+    groups = {group["check"].key: group for group in result([priced, unpriced]).groups()}
+    assert groups[COST.checks[0].key]["priced"] is True
+    assert groups[COST.checks[1].key]["priced"] is False
+
+
+def test_per_month_leaves_an_unknown_figure_out():
+    assert per_month(40.0) == "$40/month"
+    assert per_month(3.5) == "$3.50/month"
+    assert per_month(None) is None
