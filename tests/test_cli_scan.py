@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 from preflight import __version__, keys
 from preflight.cli import app
 from preflight.core.cfn import DEFAULT_FILENAME, render_role_template
-from preflight.modules import by_key
+from preflight.modules import available_modules, by_key
 
 # Wide enough that Rich doesn't wrap mid-phrase in the assertions below.
 ENV = {"COLUMNS": "200", "TERM": "dumb", "NO_COLOR": "1"}
@@ -123,10 +123,12 @@ def test_print_and_save_together(workdir, cost_template):
     assert (workdir / DEFAULT_FILENAME).read_text() == cost_template
 
 
-def test_all_selects_every_available_module(workdir, cost_template):
+def test_all_selects_every_available_module(workdir):
     result = invoke("scan", "-m", "all", "--save")
     assert result.exit_code == 0
-    assert (workdir / DEFAULT_FILENAME).read_text() == cost_template
+    expected = render_role_template(available_modules())
+    assert (workdir / DEFAULT_FILENAME).read_text() == expected
+    assert "Observability (observability)" in expected
 
 
 # --- overwrite protection -------------------------------------------------

@@ -65,8 +65,8 @@ def test_registry_matches_the_checked_in_policy():
     assert on_disk - declared == set(), "in iam/policy.json but no module claims it"
 
 
-def test_cost_is_the_only_available_module():
-    assert [module.key for module in available_modules()] == ["cost"]
+def test_cost_and_observability_are_available():
+    assert [module.key for module in available_modules()] == ["cost", "observability"]
 
 
 def test_by_key_is_forgiving_about_case_and_space():

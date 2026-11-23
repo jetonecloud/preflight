@@ -115,7 +115,7 @@ def test_the_json_report_carries_the_command_that_made_it(workdir, sample_accoun
     path = next(workdir.glob("*.json"))
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["preflight"]["command"] == (
-        f"preflight scan --modules cost --role-arn {ROLE} --region us-east-1"
+        f"preflight scan --modules cost,observability --role-arn {ROLE} --region us-east-1"
     )
     assert data["scan"]["regions"] == ["us-east-1"]
 
@@ -534,6 +534,8 @@ def test_an_account_with_nothing_wrong_says_so(workdir, monkeypatch):
         "describe_db_snapshots": {"DBSnapshots": []},
         "get_cost_and_usage": {"ResultsByTime": []},
         "get_resources": {"ResourceTagMappingList": []},
+        "describe_alarms": {"MetricAlarms": [], "CompositeAlarms": []},
+        "describe_log_groups": {"logGroups": []},
     }
     monkeypatch.setattr(session_module, "open_session", lambda **_: StubSession(empty))
 
@@ -544,5 +546,5 @@ def test_an_account_with_nothing_wrong_says_so(workdir, monkeypatch):
 
     data = json.loads(next(workdir.glob("*.json")).read_text(encoding="utf-8"))
     assert data["summary"]["findings"] == 0
-    assert data["summary"]["checks_run"] == 9
+    assert data["summary"]["checks_run"] == 12, "nine cost checks, three observability"
     assert data["spend"] is None

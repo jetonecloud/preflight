@@ -125,6 +125,11 @@ class DemoClient:
         return False
 
     def __getattr__(self, method: str) -> Any:
+        if method.startswith("_"):
+            # Only reached for a handler that doesn't exist. Answering it with
+            # another lookup would recurse until the stack ran out.
+            raise AttributeError(method)
+
         def call(**params: Any) -> dict[str, Any]:
             handler = getattr(self, f"_{method}", None)
             if handler is None:

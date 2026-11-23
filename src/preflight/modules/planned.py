@@ -1,6 +1,6 @@
 """Modules that are declared but haven't shipped yet.
 
-Their actions are real: between them and `cost.py` they account for every
+Their actions are real: between them and the shipped modules they account for every
 action in `iam/policy.json`, which is the role you get with every module
 selected. They live here rather than in their own files until their checks
 are written - graduating one means moving it to `modules/<key>.py` and
@@ -72,18 +72,6 @@ DELIVERY = Module(
         "ec2:DescribeSecurityGroups",
         "codedeploy:ListApplications",
         "codedeploy:GetDeploymentConfig",
-    ),
-)
-
-OBSERVABILITY = Module(
-    key="observability",
-    name="Observability",
-    summary="Alarm coverage, log retention, where alerts actually go.",
-    iam_actions=(
-        "cloudwatch:DescribeAlarms",
-        "logs:DescribeLogGroups",
-        "sns:ListTopics",
-        "sns:ListSubscriptions",
     ),
 )
 

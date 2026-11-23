@@ -17,10 +17,10 @@ from preflight.modules.base import (
     UnknownModuleError,
 )
 from preflight.modules.cost import COST
+from preflight.modules.observability import OBSERVABILITY
 from preflight.modules.planned import (
     BUS_FACTOR,
     DELIVERY,
-    OBSERVABILITY,
     RELIABILITY,
     SECURITY,
 )
@@ -29,10 +29,10 @@ from preflight.modules.planned import (
 # order we expect to ship them.
 REGISTRY: tuple[Module, ...] = (
     COST,
+    OBSERVABILITY,
     SECURITY,
     RELIABILITY,
     DELIVERY,
-    OBSERVABILITY,
     BUS_FACTOR,
 )
 
