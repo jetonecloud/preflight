@@ -108,6 +108,14 @@ LOAD_BALANCER_HOUR: Mapping[str, Price] = {
 }
 
 
+# --- CloudWatch Logs ------------------------------------------------------
+# https://aws.amazon.com/cloudwatch/pricing/
+
+#: Archived log storage (Standard class), per GB-month of compressed data.
+#: Ingestion is billed separately and isn't something retention changes.
+LOGS_STORAGE_GB_MONTH = Price(0.030, "GB-month")
+
+
 # --- RDS ------------------------------------------------------------------
 # https://aws.amazon.com/rds/pricing/
 
@@ -250,6 +258,12 @@ def rds_storage_monthly(storage_type: str, size_gb: float) -> tuple[float, str]:
     """What an RDS instance's allocated storage costs a month."""
     price = RDS_STORAGE_GB_MONTH.get(storage_type.lower(), RDS_STORAGE_FALLBACK)
     return price.monthly(size_gb), price.describe(size_gb, f"GB of RDS {storage_type} storage")
+
+
+def log_storage_monthly(stored_gb: float) -> tuple[float, str]:
+    """What a log group's stored data costs a month at the archive rate."""
+    price = LOGS_STORAGE_GB_MONTH
+    return price.monthly(stored_gb), price.describe(stored_gb, "GB of stored logs")
 
 
 class PriceBook:
