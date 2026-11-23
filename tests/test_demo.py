@@ -2,7 +2,7 @@
 
 `preflight demo` is the first thing most people run, and it runs the real
 checks — so these tests are really testing the whole pipeline end to end:
-nine checks, two regions, metrics, pricing, grouping and both output
+every shipped check, two regions, metrics, pricing, grouping and both output
 formats. They also pin the near-misses, because the sample is only
 convincing if the guards visibly hold.
 """
@@ -21,7 +21,7 @@ def report():
 
 def test_every_check_runs_and_nothing_is_skipped():
     result = report()
-    assert len(result.outcomes) == 9
+    assert len(result.outcomes) == 12
     assert all(outcome.ran for outcome in result.outcomes)
     assert result.complete
 
@@ -77,13 +77,43 @@ def test_the_findings_that_should_be_there_are():
     assert "i-0b5a9c1d2e3f40001" in ids, "an instance at 3% CPU"
 
 
-def test_every_finding_shows_its_arithmetic():
+def test_every_cost_finding_shows_its_arithmetic():
     for finding in report().findings:
+        if finding.module != "cost":
+            continue
         assert finding.estimate is not None, finding.title
         assert finding.estimate.basis.endswith("."), finding.title
         assert finding.monthly_usd > 0
         assert finding.evidence
         assert finding.recommendation
+
+
+def test_observability_findings_claim_no_saving():
+    """Nothing here is worth a number, and the sample mustn't pretend otherwise."""
+    observed = [f for f in report().findings if f.module == "observability"]
+    assert observed
+    assert all(finding.estimate is None for finding in observed)
+
+
+def test_the_sample_is_observed_as_well_as_costed():
+    ids = found_ids(report())
+    assert "ops-alerts" in ids, "two database alarms, and nobody confirmed the email"
+    assert "staging-alb-latency" in ids, "muted during an incident, never unmuted"
+    assert "reports-eu" in ids, "a database no alarm mentions"
+    assert "/aws/lambda/image-resizer" in ids, "84 GB, kept forever"
+    assert "/aws/rds/instance/reports-eu/slowquery" in ids, "kept forever, in Ireland"
+
+
+def test_the_observability_guards_hold_on_the_sample_account():
+    ids = found_ids(report())
+    assert "prod-alb-5xx" not in ids, "pages someone who's subscribed"
+    assert "web-cpu-high" not in ids, "scales the web tier, tells nobody on purpose"
+    assert "app-prod-cpu" not in ids, "reported once, under its topic"
+    assert "prod-alb" not in ids, "watched by prod-alb-5xx"
+    assert "app-prod" not in ids, "watched, even if the alarms go nowhere"
+    assert "/ecs/app-prod" not in ids, "thirty days' retention"
+    assert "/aws/lambda/healthcheck" not in ids, "too small to matter"
+    assert "/ecs/report-builder" not in ids, "two days old"
 
 
 def test_the_dates_move_with_the_calendar():

@@ -22,10 +22,12 @@ from preflight.core.scan import ScanContext, ScanProgress, run_module
 from preflight.core.session import AwsSession, Identity
 from preflight.core.spend import ServiceSpend, Spend
 from preflight.modules.cost import COST
+from preflight.modules.observability import OBSERVABILITY
 
 ACCOUNT_ID = "123456789012"
 REGIONS = ("us-east-1", "eu-west-1")
 LOOKBACK_DAYS = 14
+MODULES = (COST, OBSERVABILITY)
 
 IDENTITY = Identity(
     account_id=ACCOUNT_ID,
@@ -48,7 +50,7 @@ SPEND = Spend(
 
 
 def build(now: datetime | None = None, progress: ScanProgress | None = None) -> ScanResult:
-    """Run the cost module against the sample account and return the report.
+    """Run every shipped module against the sample account and return the report.
 
     `progress` is the same hook a real scan draws its per-check lines with,
     so the CLI can report the sample arriving a check at a time rather than
@@ -58,14 +60,16 @@ def build(now: datetime | None = None, progress: ScanProgress | None = None) -> 
     now = now or started
     session = DemoSession(now)
     ctx = ScanContext(session, regions=REGIONS, lookback_days=LOOKBACK_DAYS, now=now)
-    outcomes = run_module(ctx, COST, progress=progress)
+    outcomes = [
+        outcome for module in MODULES for outcome in run_module(ctx, module, progress=progress)
+    ]
     last_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
 
     return ScanResult(
         account=Account.of(IDENTITY),
         regions=REGIONS,
         outcomes=tuple(outcomes),
-        modules=(COST,),
+        modules=MODULES,
         started_at=started,
         finished_at=datetime.now(UTC),
         lookback_days=LOOKBACK_DAYS,
@@ -265,6 +269,41 @@ class DemoClient:
                 }
             )
         return {"Datapoints": points}
+
+    def _describe_alarms(self, **params: Any) -> dict[str, Any]:
+        wanted = set(params.get("AlarmTypes") or ("MetricAlarm",))
+        alarms = _ALARMS.get(self.region, [])
+        return {
+            "MetricAlarms": [a for a in alarms if "AlarmRule" not in a]
+            if "MetricAlarm" in wanted
+            else [],
+            "CompositeAlarms": [a for a in alarms if "AlarmRule" in a]
+            if "CompositeAlarm" in wanted
+            else [],
+        }
+
+    # --- SNS ---------------------------------------------------------------
+
+    def _list_topics(self, **_: Any) -> dict[str, Any]:
+        return {"Topics": [{"TopicArn": topic} for topic in _TOPICS.get(self.region, [])]}
+
+    def _list_subscriptions(self, **_: Any) -> dict[str, Any]:
+        return {"Subscriptions": list(_SUBSCRIPTIONS.get(self.region, []))}
+
+    # --- CloudWatch Logs ---------------------------------------------------
+
+    def _describe_log_groups(self, **_: Any) -> dict[str, Any]:
+        groups = []
+        for spec in _LOG_GROUPS.get(self.region, []):
+            group = dict(spec)
+            created = self._days_ago(group.pop("age_days"))
+            group["creationTime"] = int(created.timestamp() * 1000)
+            group["storedBytes"] = int(group.pop("stored_gb") * 1024**3)
+            group["logGroupArn"] = (
+                f"arn:aws:logs:{self.region}:{ACCOUNT_ID}:log-group:{group['logGroupName']}"
+            )
+            groups.append(group)
+        return {"logGroups": groups}
 
     # --- Cost Explorer -----------------------------------------------------
 
@@ -625,7 +664,18 @@ _DATABASES: dict[str, list[dict[str, Any]]] = {
             "TagList": _tags(Name="app-prod"),
         },
     ],
-    "eu-west-1": [],
+    "eu-west-1": [
+        {
+            "DBInstanceIdentifier": "reports-eu",
+            "DBInstanceArn": "arn:aws:rds:eu-west-1:123456789012:db:reports-eu",
+            "DBInstanceStatus": "available",
+            "DBInstanceClass": "db.t4g.medium",
+            "Engine": "mysql",
+            "AllocatedStorage": 100,
+            "StorageType": "gp3",
+            "TagList": _tags(Name="reports-eu", Owner="data"),
+        },
+    ],
 }
 
 _DB_SNAPSHOTS: dict[str, list[dict[str, Any]]] = {
@@ -685,4 +735,108 @@ _METRICS: dict[tuple[str, str], dict[str, Any]] = {
     ("CPUUtilization", "i-0b5a9c1d2e3f40002"): _hours(64.2),
     ("NetworkIn", "i-0b5a9c1d2e3f40002"): _days(40_000_000_000.0),
     ("RequestCount", "app/prod-alb/9f1c2b3a4d5e6f70"): _days(2_400_000.0),
+}
+
+# --- what's watching it ---------------------------------------------------
+#
+# Somebody set up alarms once. The production balancer pages a real person;
+# the database alarms go to a topic whose only subscriber never clicked the
+# confirmation email; the staging alarm was muted during an incident; and
+# the reporting database in Ireland was never given one at all.
+
+_PAGER = "arn:aws:sns:us-east-1:123456789012:pager"
+_OPS_ALERTS = "arn:aws:sns:us-east-1:123456789012:ops-alerts"
+
+
+def _alarm(name: str, actions: list[str], dimension: tuple[str, str], **extra: Any) -> dict:
+    return {
+        "AlarmName": name,
+        "AlarmArn": f"arn:aws:cloudwatch:us-east-1:123456789012:alarm:{name}",
+        "AlarmActions": actions,
+        "ActionsEnabled": True,
+        "StateValue": "OK",
+        "Dimensions": [{"Name": dimension[0], "Value": dimension[1]}],
+        **extra,
+    }
+
+
+_ALARMS: dict[str, list[dict[str, Any]]] = {
+    "us-east-1": [
+        _alarm(
+            "prod-alb-5xx",
+            [_PAGER],
+            ("LoadBalancer", "app/prod-alb/9f1c2b3a4d5e6f70"),
+            Namespace="AWS/ApplicationELB",
+            MetricName="HTTPCode_Target_5XX_Count",
+        ),
+        _alarm(
+            "app-prod-cpu",
+            [_OPS_ALERTS],
+            ("DBInstanceIdentifier", "app-prod"),
+            Namespace="AWS/RDS",
+            MetricName="CPUUtilization",
+        ),
+        _alarm(
+            "app-prod-free-storage",
+            [_OPS_ALERTS],
+            ("DBInstanceIdentifier", "app-prod"),
+            Namespace="AWS/RDS",
+            MetricName="FreeStorageSpace",
+        ),
+        _alarm(
+            "staging-alb-latency",
+            [_PAGER],
+            ("LoadBalancer", "app/staging-alb/50dc6c495c0c9188"),
+            Namespace="AWS/ApplicationELB",
+            MetricName="TargetResponseTime",
+            ActionsEnabled=False,
+            StateValue="ALARM",
+        ),
+        # Scales the web tier. Doesn't need to tell anyone.
+        _alarm(
+            "web-cpu-high",
+            [
+                "arn:aws:autoscaling:us-east-1:123456789012:scalingPolicy:"
+                "0a1b:autoScalingGroupName/web-asg:policyName/scale-out"
+            ],
+            ("AutoScalingGroupName", "web-asg"),
+            Namespace="AWS/EC2",
+            MetricName="CPUUtilization",
+        ),
+    ],
+    "eu-west-1": [],
+}
+
+_TOPICS: dict[str, list[str]] = {
+    "us-east-1": [_PAGER, _OPS_ALERTS],
+    "eu-west-1": [],
+}
+
+_SUBSCRIPTIONS: dict[str, list[dict[str, Any]]] = {
+    "us-east-1": [
+        {"TopicArn": _PAGER, "Protocol": "https", "SubscriptionArn": f"{_PAGER}:7f3e"},
+        {"TopicArn": _OPS_ALERTS, "Protocol": "email", "SubscriptionArn": "PendingConfirmation"},
+    ],
+    "eu-west-1": [],
+}
+
+_LOG_GROUPS: dict[str, list[dict[str, Any]]] = {
+    "us-east-1": [
+        {"logGroupName": "/aws/lambda/image-resizer", "stored_gb": 84.0, "age_days": 540},
+        {
+            "logGroupName": "/ecs/app-prod",
+            "stored_gb": 22.0,
+            "age_days": 420,
+            "retentionInDays": 30,
+        },
+        {"logGroupName": "/aws/lambda/healthcheck", "stored_gb": 0.2, "age_days": 400},
+    ],
+    "eu-west-1": [
+        {
+            "logGroupName": "/aws/rds/instance/reports-eu/slowquery",
+            "stored_gb": 12.5,
+            "age_days": 210,
+        },
+        {"logGroupName": "/ecs/report-builder", "stored_gb": 3.0, "age_days": 2},
+    ],
 }
