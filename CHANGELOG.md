@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
+### Added
+- **The Observability Check.** A second module, run by default alongside the Cost Check, about whether anyone would find out when something breaks. Three checks: alarms that notify nobody (actions switched off, no actions at all, or every SNS topic gone or without a confirmed subscriber — reported once per topic, since one subscription fixes every alarm behind it), databases and load balancers that no CloudWatch alarm mentions, and log groups with no retention period. See [`docs/observability.md`](docs/observability.md).
+  - Guards throughout: alarms that scale or recover something, the children of a composite alarm, topics in another region, Aurora instances covered by a cluster alarm, alarms built from metric math, stopped or brand-new resources, and log groups under a gigabyte or less than a week old.
+  - Medium confidence where it can't see everything — monitoring outside CloudWatch is invisible to it, and the finding says so.
+  - No new permissions: every action it reads was already in `iam/policy.json`. A role generated for `--modules observability` alone is nine read-only actions.
+- `preflight demo` runs it too, against a sample account with a muted staging alarm, database alarms sent to a topic whose email nobody confirmed, an unwatched database in Ireland, and Lambda logs kept since launch — each next to a near-miss the guards correctly leave alone.
+
+### Fixed
+- Findings without a dollar figure no longer get one. The report printed `-/month` after them, `$0.00/month` above a check that prices nothing, and an "Estimated saving" of zero for a scan that found plenty. Now the figure is left out, and a report with nothing priced leads with how many findings it has — in the terminal and in the PDF.
+- `preflight demo` recursed until the stack ran out if a check asked the sample account for an operation it had no answer for. It now answers with nothing.
+
 ## [0.2.0] - 2026-11-03
 
 The release where `scan` actually scans. 0.1.0 could generate the role; this one reads the account with it, reports what it found, and writes that report where you want it.

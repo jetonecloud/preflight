@@ -79,6 +79,22 @@ preflight scan --role-arn <arn> --days 30         # a longer look at usage
 preflight scan --role-arn <arn> --redact          # shareable without sharing your account
 ```
 
+## What the Observability Check looks for
+
+Monitoring rarely goes missing outright. It quietly stops working.
+
+| Check | Looks for |
+|---|---|
+| Alarms that notify nobody | Actions switched off, nowhere to send it, or a topic with no confirmed subscriber |
+| Databases and load balancers nothing is watching | Running RDS instances, ALBs and NLBs that no CloudWatch alarm mentions |
+| Log groups kept forever | No retention period, a gigabyte or more and growing |
+
+None of these comes with a dollar figure, and the report doesn't invent one. The same guards apply: an alarm that scales something is doing its job, a composite alarm's children don't need actions of their own, and a topic in another region gets the benefit of the doubt. [`docs/observability.md`](docs/observability.md) has the details.
+
+```sh
+preflight scan --role-arn <arn> --modules observability   # just this one
+```
+
 ## Permissions and your data
 
 [`iam/policy.json`](iam/policy.json) uses only `Get`, `List` and `Describe` actions, with no wildcards. Each check declares what it needs, so a generated role covers the checks you picked and nothing else — Preflight refuses to emit a policy containing a write verb or a wildcard.
