@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from preflight.core.findings import Confidence, Finding, Resource, Severity
-from preflight.core.scan import ScanContext, ignored
+from preflight.core.scan import ScanContext, ignored, tags_to_dict
 from preflight.modules.base import Check
 
 MODULE = "observability"
@@ -24,6 +24,10 @@ UNCONFIRMED = frozenset({"PendingConfirmation", "Deleted"})
 
 #: How many alarm names a finding about a topic lists before summarising.
 NAMES_SHOWN = 5
+
+#: Something created this week may not have had its alarms set up yet.
+MIN_RESOURCE_AGE_DAYS = 7
+
 
 # --- alarms that notify nobody --------------------------------------------
 
@@ -247,6 +251,136 @@ def _topic_finding(
     )
 
 
+# --- resources nothing is watching ----------------------------------------
+
+
+def unwatched_resources(ctx: ScanContext) -> Iterator[Finding]:
+    """Databases and load balancers that no CloudWatch alarm mentions."""
+    for region in ctx.regions:
+        databases = [
+            database
+            for database in ctx.collect("rds:DescribeDBInstances", "DBInstances", region=region)
+            if database.get("DBInstanceStatus") == "available"
+        ]
+        balancers = [
+            balancer
+            for balancer in ctx.collect(
+                "elasticloadbalancing:DescribeLoadBalancers", "LoadBalancers", region=region
+            )
+            if balancer.get("State", {}).get("Code") == "active"
+            and balancer.get("Type") in ("application", "network")
+        ]
+        if not databases and not balancers:
+            continue
+
+        watched = _watched_dimensions(_metric_alarms(ctx, region))
+
+        for database in databases:
+            ctx.looked_at()
+            identifier = str(database.get("DBInstanceIdentifier"))
+            cluster = database.get("DBClusterIdentifier")
+            if ("DBInstanceIdentifier", identifier) in watched:
+                continue
+            if cluster and ("DBClusterIdentifier", str(cluster)) in watched:
+                continue
+            tags = tags_to_dict(database.get("TagList"))
+            if ignored(tags) or _too_new(ctx, database.get("InstanceCreateTime")):
+                continue
+            engine = str(database.get("Engine") or "database")
+            yield _unwatched_finding(
+                ctx,
+                region,
+                resource=Resource(
+                    id=identifier,
+                    kind="rds:db",
+                    region=region,
+                    arn=database.get("DBInstanceArn") or ctx.arn("rds", region, f"db:{identifier}"),
+                    tags=tags,
+                ),
+                title=f"{engine} database with no alarm on it",
+                what=(
+                    f"No alarm watches DBInstanceIdentifier={identifier}"
+                    + (f" or DBClusterIdentifier={cluster}" if cluster else "")
+                    + "."
+                ),
+                suggest=(
+                    "Start with CPUUtilization, FreeStorageSpace and "
+                    "DatabaseConnections - a full disk is the outage that gives "
+                    "the most warning and gets the least notice."
+                ),
+            )
+
+        for balancer in balancers:
+            ctx.looked_at()
+            arn = str(balancer.get("LoadBalancerArn") or "")
+            dimension = arn.split("loadbalancer/", 1)[-1] if "loadbalancer/" in arn else ""
+            if not dimension or ("LoadBalancer", dimension) in watched:
+                continue
+            tags = dict(ctx.tags_for(region, arn))
+            if ignored(tags) or _too_new(ctx, balancer.get("CreatedTime")):
+                continue
+            kind = str(balancer.get("Type"))
+            yield _unwatched_finding(
+                ctx,
+                region,
+                resource=Resource(
+                    id=str(balancer.get("LoadBalancerName")),
+                    kind=f"elb:{kind}",
+                    region=region,
+                    arn=arn,
+                    tags=tags,
+                ),
+                title=f"{kind.capitalize()} load balancer with no alarm on it",
+                what=f"No alarm watches LoadBalancer={dimension}.",
+                suggest=(
+                    "Alarm on 5XX responses and on UnHealthyHostCount for its "
+                    "target groups: those are what your users notice first."
+                    if kind == "application"
+                    else "Alarm on UnHealthyHostCount for its target groups."
+                ),
+            )
+
+
+def _watched_dimensions(alarms: list[dict[str, Any]]) -> set[tuple[str, str]]:
+    """Every (dimension, value) pair any alarm looks at, metric math included."""
+    pairs: set[tuple[str, str]] = set()
+
+    def add(dimensions: Any) -> None:
+        for dimension in dimensions or ():
+            pairs.add((str(dimension.get("Name")), str(dimension.get("Value"))))
+
+    for alarm in alarms:
+        add(alarm.get("Dimensions"))
+        for query in alarm.get("Metrics") or ():
+            add(query.get("MetricStat", {}).get("Metric", {}).get("Dimensions"))
+    return pairs
+
+
+def _too_new(ctx: ScanContext, created: Any) -> bool:
+    age = ctx.days_since(created)
+    return age is not None and age < MIN_RESOURCE_AGE_DAYS
+
+
+def _unwatched_finding(
+    ctx: ScanContext, region: str, *, resource: Resource, title: str, what: str, suggest: str
+) -> Finding:
+    return Finding(
+        check="unwatched-resources",
+        module=MODULE,
+        title=title,
+        resource=resource,
+        evidence=(
+            what,
+            "If it stops answering, the first to know will be whoever depends on it.",
+            "Monitoring outside CloudWatch - Datadog, Grafana, an uptime "
+            "service - is invisible to this check.",
+        ),
+        recommendation=(f"Add CloudWatch alarms and send them somewhere someone reads. {suggest}"),
+        confidence=Confidence.MEDIUM,
+        severity=Severity.MEDIUM,
+    )
+
+
 ALARMS_THAT_NOTIFY_NOBODY = Check(
     key="alarms-that-notify-nobody",
     title="Alarms that notify nobody",
@@ -255,4 +389,16 @@ ALARMS_THAT_NOTIFY_NOBODY = Check(
     ),
     actions=("cloudwatch:DescribeAlarms", "sns:ListTopics", "sns:ListSubscriptions"),
     run=alarms_that_notify_nobody,
+)
+
+UNWATCHED_RESOURCES = Check(
+    key="unwatched-resources",
+    title="Databases and load balancers nothing is watching",
+    looks_for="Running databases and load balancers that no CloudWatch alarm mentions.",
+    actions=(
+        "rds:DescribeDBInstances",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "cloudwatch:DescribeAlarms",
+    ),
+    run=unwatched_resources,
 )

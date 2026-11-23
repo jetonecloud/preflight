@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from conftest import denied, findings, run
+from conftest import days_ago, denied, findings, run, tags
 
 from preflight.core.findings import Confidence, Severity
-from preflight.modules.observability.alarms import ALARMS_THAT_NOTIFY_NOBODY
+from preflight.modules.observability.alarms import (
+    ALARMS_THAT_NOTIFY_NOBODY,
+    MIN_RESOURCE_AGE_DAYS,
+    UNWATCHED_RESOURCES,
+)
 
 ACCOUNT = "123456789012"
 PAGER = f"arn:aws:sns:us-east-1:{ACCOUNT}:pager"
@@ -146,3 +150,120 @@ def test_missing_sns_permission_skips_rather_than_guesses():
     outcome = run(ALARMS_THAT_NOTIFY_NOBODY, data)
     assert outcome.status == "skipped"
     assert outcome.missing_action == "sns:ListSubscriptions"
+
+
+# --- resources nothing is watching ----------------------------------------
+
+LB_ARN = f"arn:aws:elasticloadbalancing:us-east-1:{ACCOUNT}:loadbalancer/app/web/50dc6c495c0c9188"
+
+
+def database(identifier="orders", status="available", age=120, cluster=None, **extra):
+    data = {
+        "DBInstanceIdentifier": identifier,
+        "DBInstanceArn": f"arn:aws:rds:us-east-1:{ACCOUNT}:db:{identifier}",
+        "DBInstanceStatus": status,
+        "Engine": "postgres",
+        "InstanceCreateTime": days_ago(age),
+        **extra,
+    }
+    if cluster:
+        data["DBClusterIdentifier"] = cluster
+    return data
+
+
+def balancer(kind="application", age=120, state="active"):
+    return {
+        "LoadBalancerArn": LB_ARN,
+        "LoadBalancerName": "web",
+        "Type": kind,
+        "State": {"Code": state},
+        "CreatedTime": days_ago(age),
+    }
+
+
+def watching(name, value):
+    return alarm(f"watch-{value}", Dimensions=[{"Name": name, "Value": value}])
+
+
+def estate(databases=(), balancers=(), alarms=()):
+    return {
+        "describe_db_instances": {"DBInstances": list(databases)},
+        "describe_load_balancers": {"LoadBalancers": list(balancers)},
+        "describe_alarms": {"MetricAlarms": list(alarms)},
+    }
+
+
+def test_flags_a_database_no_alarm_mentions():
+    found = findings(UNWATCHED_RESOURCES, estate([database()]))
+    assert len(found) == 1
+    assert found[0].title == "postgres database with no alarm on it"
+    assert found[0].confidence is Confidence.MEDIUM
+    assert found[0].resource.kind == "rds:db"
+
+
+def test_a_watched_database_is_fine():
+    watched = estate([database()], alarms=[watching("DBInstanceIdentifier", "orders")])
+    outcome = run(UNWATCHED_RESOURCES, watched)
+    assert outcome.findings == ()
+    assert outcome.examined == 1
+
+
+def test_an_alarm_on_the_cluster_covers_its_instances():
+    data = estate(
+        [database("orders-1", cluster="orders")],
+        alarms=[watching("DBClusterIdentifier", "orders")],
+    )
+    assert findings(UNWATCHED_RESOURCES, data) == ()
+
+
+def test_metric_math_alarms_count():
+    math = alarm(
+        "error-rate",
+        Metrics=[
+            {
+                "Id": "m1",
+                "MetricStat": {
+                    "Metric": {
+                        "Namespace": "AWS/ApplicationELB",
+                        "MetricName": "HTTPCode_ELB_5XX_Count",
+                        "Dimensions": [
+                            {"Name": "LoadBalancer", "Value": "app/web/50dc6c495c0c9188"}
+                        ],
+                    }
+                },
+            }
+        ],
+    )
+    assert findings(UNWATCHED_RESOURCES, estate(balancers=[balancer()], alarms=[math])) == ()
+
+
+def test_flags_an_unwatched_load_balancer():
+    found = findings(UNWATCHED_RESOURCES, estate(balancers=[balancer()]))
+    assert found[0].title == "Application load balancer with no alarm on it"
+    assert found[0].resource.arn == LB_ARN
+
+
+def test_stopped_new_and_gateway_resources_are_left_alone():
+    data = estate(
+        [database(status="stopped"), database("fresh", age=MIN_RESOURCE_AGE_DAYS - 1)],
+        [balancer(kind="gateway"), balancer(state="provisioning")],
+    )
+    assert findings(UNWATCHED_RESOURCES, data) == ()
+
+
+def test_respects_the_ignore_tag_on_a_database():
+    kept = database(TagList=tags(**{"preflight:ignore": "scratch"}))
+    assert findings(UNWATCHED_RESOURCES, estate([kept])) == ()
+
+
+def test_nothing_to_watch_means_no_alarm_reads():
+    outcome = run(UNWATCHED_RESOURCES, estate())
+    assert outcome.status == "ran"
+
+
+def test_missing_rds_permission_skips_the_check():
+    data = estate()
+    data["describe_db_instances"] = denied("DescribeDBInstances")
+    outcome = run(UNWATCHED_RESOURCES, data)
+    assert outcome.status == "skipped"
+    assert outcome.missing_action == "rds:DescribeDBInstances"
