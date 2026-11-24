@@ -175,6 +175,26 @@ def test_cost_explorer_not_being_enabled_is_its_own_case():
     assert isinstance(error, aws.NotSubscribed)
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "NoSuchEntity",
+        "NoSuchBucketPolicy",
+        "NoSuchPublicAccessBlockConfiguration",
+        "TrailNotFoundException",
+        "DBInstanceNotFoundFault",
+    ],
+)
+def test_nothing_there_is_its_own_case(code):
+    error = aws.translate(client_error(code, "none here"), action="s3:GetBucketPolicyStatus")
+    assert isinstance(error, aws.NotFound)
+    assert error.code == code
+    assert error.action == "s3:GetBucketPolicyStatus"
+    # Still an AwsError, so a check that doesn't expect it fails as it used to.
+    assert isinstance(error, aws.AwsError)
+    assert code in error.message
+
+
 def test_anything_else_keeps_the_code_and_message():
     error = aws.translate(client_error("Throttling", "slow down"), action="ec2:DescribeVolumes")
     assert type(error) is aws.AwsError

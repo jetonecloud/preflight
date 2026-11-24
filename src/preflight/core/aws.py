@@ -62,6 +62,29 @@ class NotSubscribed(AwsError):
         super().__init__(f"{action} isn't enabled for this account")
 
 
+class NotFound(AwsError):
+    """The thing asked about doesn't exist - which is often the answer.
+
+    S3 says `NoSuchBucketPolicy` for a bucket with no policy, IAM says
+    `NoSuchEntity` for a user with no password. A check that asks those
+    questions wants "there isn't one", not a failed check, so this is kept
+    apart from the errors that mean something went wrong. It's still an
+    `AwsError`: a check that doesn't expect it fails as before.
+    """
+
+    def __init__(self, action: str, code: str, detail: str = "") -> None:
+        self.action = action
+        self.code = code
+        super().__init__(f"{action} found nothing ({code}){': ' + detail if detail else ''}")
+
+
+def is_not_found(code: str) -> bool:
+    """`NoSuchEntity`, `TrailNotFoundException`, `DBInstanceNotFoundFault` and kin."""
+    return code.startswith("NoSuch") or any(
+        code.endswith(suffix) for suffix in ("NotFound", "NotFoundException", "NotFoundFault")
+    )
+
+
 class RegionUnavailable(AwsError):
     """A region we tried to read isn't enabled, or wouldn't answer."""
 
@@ -123,6 +146,8 @@ def translate(error: Exception, *, action: str, region: str | None = None) -> Aw
             return NotSubscribed(action)
         if code in REGION_CODES and region:
             return RegionUnavailable(region, message_of(error) or code)
+        if is_not_found(code):
+            return NotFound(action, code, message_of(error))
         return AwsError(f"{action} failed ({code}): {message_of(error) or 'no detail given'}")
     if isinstance(error, NoCredentialsError):
         return CredentialsError(
