@@ -23,11 +23,12 @@ from preflight.core.session import AwsSession, Identity
 from preflight.core.spend import ServiceSpend, Spend
 from preflight.modules.cost import COST
 from preflight.modules.observability import OBSERVABILITY
+from preflight.modules.security import SECURITY
 
 ACCOUNT_ID = "123456789012"
 REGIONS = ("us-east-1", "eu-west-1")
 LOOKBACK_DAYS = 14
-MODULES = (COST, OBSERVABILITY)
+MODULES = (COST, OBSERVABILITY, SECURITY)
 
 IDENTITY = Identity(
     account_id=ACCOUNT_ID,
@@ -327,6 +328,105 @@ class DemoClient:
             ]
         }
 
+    # --- IAM -------------------------------------------------------------
+
+    def _get_account_summary(self, **_: Any) -> dict[str, Any]:
+        return {"SummaryMap": dict(_ACCOUNT_SUMMARY)}
+
+    def _list_users(self, **_: Any) -> dict[str, Any]:
+        users = []
+        for name, spec in _USERS.items():
+            user = {
+                "UserName": name,
+                "Arn": f"arn:aws:iam::{ACCOUNT_ID}:user/{name}",
+                "CreateDate": self._days_ago(spec["age_days"]),
+            }
+            if spec.get("signed_in_days_ago") is not None:
+                user["PasswordLastUsed"] = self._days_ago(spec["signed_in_days_ago"])
+            users.append(user)
+        return {"Users": users}
+
+    def _get_login_profile(self, **params: Any) -> dict[str, Any]:
+        name = str(params.get("UserName"))
+        if not _USERS[name].get("password"):
+            raise _no_such("NoSuchEntity", "GetLoginProfile")
+        return {"LoginProfile": {"UserName": name}}
+
+    def _list_mfa_devices(self, **params: Any) -> dict[str, Any]:
+        name = str(params.get("UserName"))
+        if not _USERS[name].get("mfa"):
+            return {"MFADevices": []}
+        return {"MFADevices": [{"SerialNumber": f"arn:aws:iam::{ACCOUNT_ID}:mfa/{name}"}]}
+
+    def _list_user_tags(self, **params: Any) -> dict[str, Any]:
+        return {"Tags": list(_USERS[str(params.get("UserName"))].get("tags", []))}
+
+    def _list_access_keys(self, **params: Any) -> dict[str, Any]:
+        keys = _USERS[str(params.get("UserName"))].get("keys", [])
+        return {
+            "AccessKeyMetadata": [
+                {
+                    "AccessKeyId": key["id"],
+                    "Status": key.get("status", "Active"),
+                    "CreateDate": self._days_ago(key["age_days"]),
+                }
+                for key in keys
+            ]
+        }
+
+    def _get_access_key_last_used(self, **params: Any) -> dict[str, Any]:
+        wanted = str(params.get("AccessKeyId"))
+        for spec in _USERS.values():
+            for key in spec.get("keys", []):
+                if key["id"] != wanted:
+                    continue
+                used: dict[str, Any] = {"ServiceName": key.get("service", "N/A")}
+                if key.get("used_days_ago") is not None:
+                    used["LastUsedDate"] = self._days_ago(key["used_days_ago"])
+                return {"AccessKeyLastUsed": used}
+        return {}
+
+    # --- Security groups ---------------------------------------------------
+
+    def _describe_security_groups(self, **_: Any) -> dict[str, Any]:
+        return {"SecurityGroups": list(_SECURITY_GROUPS.get(self.region, []))}
+
+    def _describe_network_interfaces(self, **_: Any) -> dict[str, Any]:
+        interfaces = [
+            {"NetworkInterfaceId": f"eni-0a1b2c3d4e5f6{index:04x}", "Groups": [{"GroupId": g}]}
+            for index, g in enumerate(_INTERFACES.get(self.region, []))
+        ]
+        return {"NetworkInterfaces": interfaces}
+
+    # --- S3 ----------------------------------------------------------------
+
+    def _list_buckets(self, **_: Any) -> dict[str, Any]:
+        return {"Buckets": [{"Name": name} for name in _BUCKETS]}
+
+    def _get_bucket_location(self, **params: Any) -> dict[str, Any]:
+        region = _BUCKETS[str(params.get("Bucket"))]["region"]
+        return {"LocationConstraint": None if region == "us-east-1" else region}
+
+    def _get_bucket_policy_status(self, **params: Any) -> dict[str, Any]:
+        bucket = _BUCKETS[str(params.get("Bucket"))]
+        if "public" not in bucket:
+            raise _no_such("NoSuchBucketPolicy", "GetBucketPolicyStatus")
+        return {"PolicyStatus": {"IsPublic": bucket["public"]}}
+
+    def _get_public_access_block(self, **params: Any) -> dict[str, Any]:
+        bucket = _BUCKETS[str(params.get("Bucket"))]
+        if bucket.get("block") is None:
+            raise _no_such("NoSuchPublicAccessBlockConfiguration", "GetPublicAccessBlock")
+        return {"PublicAccessBlockConfiguration": dict(bucket["block"])}
+
+    # --- CloudTrail --------------------------------------------------------
+
+    def _describe_trails(self, **_: Any) -> dict[str, Any]:
+        return {"trailList": list(_TRAILS.get(self.region, []))}
+
+    def _get_trail_status(self, **_: Any) -> dict[str, Any]:
+        return {"IsLogging": True}
+
     # --- Tags --------------------------------------------------------------
 
     def _get_resources(self, **_: Any) -> dict[str, Any]:
@@ -339,6 +439,13 @@ def _filter_values(params: dict[str, Any], name: str) -> set[str]:
         if entry.get("Name") == name:
             return {str(value) for value in entry.get("Values", ())}
     return set()
+
+
+def _no_such(code: str, operation: str) -> Exception:
+    """What AWS says when there's nothing there - which is often the answer."""
+    from botocore.exceptions import ClientError
+
+    return ClientError({"Error": {"Code": code, "Message": "not found"}}, operation)
 
 
 def _tags(**pairs: str) -> list[dict[str, str]]:
@@ -716,7 +823,11 @@ _TAGGED: dict[str, list[dict[str, Any]]] = {
                 "loadbalancer/app/staging-alb/50dc6c495c0c9188"
             ),
             "Tags": _tags(Name="staging-alb", Environment="staging", Owner="platform"),
-        }
+        },
+        {
+            "ResourceARN": "arn:aws:s3:::marketing-site",
+            "Tags": _tags(**{"preflight:ignore": "static website, public on purpose"}),
+        },
     ],
     "eu-west-1": [],
 }
@@ -839,4 +950,166 @@ _LOG_GROUPS: dict[str, list[dict[str, Any]]] = {
         },
         {"logGroupName": "/ecs/report-builder", "stored_gb": 3.0, "age_days": 2},
     ],
+}
+
+# --- who can get in -------------------------------------------------------
+#
+# The founders set the account up properly and then got busy. Root has MFA
+# but kept the access key from the first week's CLI setup; the original
+# contractor still has a console password; CI moved to OIDC and left its old
+# key behind; somebody opened Postgres to the world to debug a migration;
+# and the exports bucket was made public "just for the demo". The one trail
+# was created in us-east-1 only, so Ireland goes unrecorded.
+
+_ACCOUNT_SUMMARY: dict[str, int] = {
+    "AccountMFAEnabled": 1,
+    "AccountAccessKeysPresent": 1,
+    "Users": 6,
+}
+
+_USERS: dict[str, dict[str, Any]] = {
+    "maya": {"age_days": 700, "password": True, "mfa": True, "signed_in_days_ago": 1},
+    "sam": {"age_days": 380, "password": True, "signed_in_days_ago": 6},
+    "jordan-contractor": {"age_days": 610, "password": True, "signed_in_days_ago": 210},
+    # Started this week; hasn't signed in yet, so hasn't had the chance.
+    "new-hire": {"age_days": 2, "password": True},
+    "deploy-bot": {
+        "age_days": 650,
+        "keys": [
+            {"id": "AKIAEXAMPLEDEPLOY001", "age_days": 40, "used_days_ago": 0, "service": "ecr"},
+        ],
+    },
+    "ci-legacy": {
+        "age_days": 720,
+        "keys": [
+            {"id": "AKIAEXAMPLECILEGACY1", "age_days": 700, "used_days_ago": 160, "service": "s3"},
+            # Already switched off - nothing to say about it.
+            {"id": "AKIAEXAMPLECILEGACY2", "age_days": 690, "status": "Inactive"},
+        ],
+    },
+}
+
+_SECURITY_GROUPS: dict[str, list[dict[str, Any]]] = {
+    "us-east-1": [
+        {
+            "GroupId": "sg-0a11ce0000000web1",
+            "GroupName": "web",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 443,
+                    "ToPort": 443,
+                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                    "Ipv6Ranges": [{"CidrIpv6": "::/0"}],
+                },
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 80,
+                    "ToPort": 80,
+                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                },
+            ],
+            "Tags": _tags(Name="web"),
+        },
+        {
+            "GroupId": "sg-0db0deb000000db01",
+            "GroupName": "app-prod-db-debug",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 5432,
+                    "ToPort": 5432,
+                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                },
+            ],
+            "Tags": _tags(Name="app-prod-db-debug"),
+        },
+        {
+            "GroupId": "sg-0b0057000000b0571",
+            "GroupName": "bastion",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 22,
+                    "ToPort": 22,
+                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                },
+            ],
+            "Tags": _tags(Name="bastion", Owner="platform"),
+        },
+        # Wide open, and attached to nothing: untidy, not exposed.
+        {
+            "GroupId": "sg-0001d0000000rdp01",
+            "GroupName": "windows-trial",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 3389,
+                    "ToPort": 3389,
+                    "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                },
+            ],
+            "Tags": [],
+        },
+    ],
+    "eu-west-1": [
+        {
+            "GroupId": "sg-0e0000000000eu001",
+            "GroupName": "reports-eu-db",
+            "IpPermissions": [
+                {
+                    "IpProtocol": "tcp",
+                    "FromPort": 3306,
+                    "ToPort": 3306,
+                    "IpRanges": [{"CidrIp": "10.20.0.0/16"}],
+                },
+            ],
+            "Tags": _tags(Name="reports-eu-db"),
+        },
+    ],
+}
+
+#: One network interface per entry, using that group.
+_INTERFACES: dict[str, list[str]] = {
+    "us-east-1": [
+        "sg-0a11ce0000000web1",
+        "sg-0a11ce0000000web1",
+        "sg-0db0deb000000db01",
+        "sg-0b0057000000b0571",
+    ],
+    "eu-west-1": ["sg-0e0000000000eu001"],
+}
+
+_BLOCKED = {
+    "BlockPublicAcls": True,
+    "IgnorePublicAcls": True,
+    "BlockPublicPolicy": True,
+    "RestrictPublicBuckets": True,
+}
+
+#: `public` missing means the bucket has no policy at all; `block` None means
+#: Block Public Access was never configured on it.
+_BUCKETS: dict[str, dict[str, Any]] = {
+    "app-user-uploads": {"region": "us-east-1", "public": False, "block": _BLOCKED},
+    "app-exports": {
+        "region": "us-east-1",
+        "public": True,
+        "block": {"BlockPublicAcls": True, "IgnorePublicAcls": True},
+    },
+    "marketing-site": {"region": "us-east-1", "public": True, "block": None},
+    "reports-eu-archive": {"region": "eu-west-1", "block": None},
+    # Outside the scanned regions, so outside the report.
+    "sydney-pilot": {"region": "ap-southeast-2", "public": True, "block": None},
+}
+
+_TRAILS: dict[str, list[dict[str, Any]]] = {
+    "us-east-1": [
+        {
+            "Name": "audit",
+            "TrailARN": f"arn:aws:cloudtrail:us-east-1:{ACCOUNT_ID}:trail/audit",
+            "HomeRegion": "us-east-1",
+            "IsMultiRegionTrail": False,
+        }
+    ],
+    "eu-west-1": [],
 }

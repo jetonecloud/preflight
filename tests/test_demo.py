@@ -21,7 +21,7 @@ def report():
 
 def test_every_check_runs_and_nothing_is_skipped():
     result = report()
-    assert len(result.outcomes) == 12
+    assert len(result.outcomes) == 18
     assert all(outcome.ran for outcome in result.outcomes)
     assert result.complete
 
@@ -114,6 +114,39 @@ def test_the_observability_guards_hold_on_the_sample_account():
     assert "/ecs/app-prod" not in ids, "thirty days' retention"
     assert "/aws/lambda/healthcheck" not in ids, "too small to matter"
     assert "/ecs/report-builder" not in ids, "two days old"
+
+
+def test_security_findings_claim_no_saving():
+    secured = [f for f in report().findings if f.module == "security"]
+    assert secured
+    assert all(finding.estimate is None for finding in secured)
+
+
+def test_the_sample_is_secured_as_well():
+    ids = found_ids(report())
+    assert "root" in ids, "the access key from the first week's CLI setup"
+    assert "sam" in ids, "signs in every week, no MFA"
+    assert "jordan-contractor" in ids, "a contractor's password, unused for months"
+    assert "AKIAEXAMPLECILEGACY1" in ids, "CI moved to OIDC and left this behind"
+    assert "sg-0db0deb000000db01" in ids, "Postgres open to the world"
+    assert "sg-0b0057000000b0571" in ids, "SSH open to the world"
+    assert "app-exports" in ids, "made public for a demo"
+    assert "reports-eu-archive" in ids, "nothing stops it going public"
+    assert "eu-west-1" in ids, "the only trail is in us-east-1"
+
+
+def test_the_security_guards_hold_on_the_sample_account():
+    ids = found_ids(report())
+    assert "maya" not in ids, "has MFA"
+    assert "new-hire" not in ids, "started this week"
+    assert "AKIAEXAMPLEDEPLOY001" not in ids, "used today"
+    assert "AKIAEXAMPLECILEGACY2" not in ids, "already inactive"
+    assert "sg-0a11ce0000000web1" not in ids, "80 and 443 are a web server's job"
+    assert "sg-0001d0000000rdp01" not in ids, "open, but nothing uses it"
+    assert "sg-0e0000000000eu001" not in ids, "only open to the VPC"
+    assert "app-user-uploads" not in ids, "private and blocked"
+    assert "marketing-site" not in ids, "public on purpose, and tagged to say so"
+    assert "sydney-pilot" not in ids, "not in a scanned region"
 
 
 def test_the_dates_move_with_the_calendar():
