@@ -28,6 +28,19 @@ MIN_USER_AGE_DAYS = 7
 #: today, not a forgotten account.
 ACTIVE_SIGN_IN_DAYS = 90
 
+#: An active key nobody has used in this long is a credential waiting to leak.
+UNUSED_KEY_DAYS = 90
+
+#: Past this, an unused key is high severity: whatever it was for is gone.
+LONG_UNUSED_KEY_DAYS = 365
+
+#: A key created this recently and not yet used may be on its way into a
+#: deploy pipeline.
+NEW_KEY_DAYS = 30
+
+#: A key in use but older than this should have been rotated by now.
+ROTATE_AFTER_DAYS = 365
+
 
 # --- the root user ---------------------------------------------------------
 
@@ -191,4 +204,98 @@ CONSOLE_USERS_WITHOUT_MFA = Check(
         "iam:ListUserTags",
     ),
     run=console_users_without_mfa,
+)
+
+
+# --- access keys -----------------------------------------------------------
+
+
+def stale_access_keys(ctx: ScanContext) -> Iterator[Finding]:
+    """Active access keys nobody uses, and keys in use that were never rotated."""
+    for user in ctx.collect("iam:ListUsers", "Users"):
+        name = str(user.get("UserName"))
+        keys = ctx.collect("iam:ListAccessKeys", "AccessKeyMetadata", UserName=name)
+        tags: dict[str, str] | None = None
+        for key in keys:
+            ctx.looked_at()
+            if key.get("Status") != "Active":
+                continue
+            key_id = str(key.get("AccessKeyId"))
+            age = ctx.days_since(key.get("CreateDate"))
+            used = ctx.call("iam:GetAccessKeyLastUsed", AccessKeyId=key_id)
+            last = (used.get("AccessKeyLastUsed") or {}).get("LastUsedDate")
+            idle = ctx.days_since(last)
+
+            judgement = _judge_key(age, idle)
+            if judgement is None:
+                continue
+            if tags is None:
+                tags = user_tags(ctx, name)
+            if ignored(tags):
+                break
+            title, severity, recommendation = judgement
+
+            evidence = [f"Active access key belonging to IAM user {name}."]
+            if age is not None:
+                evidence.append(f"Created {age:,.0f} days ago.")
+            if idle is None:
+                evidence.append("Has never been used.")
+            else:
+                service = (used.get("AccessKeyLastUsed") or {}).get("ServiceName")
+                where = f", calling {service}" if service and service != "N/A" else ""
+                evidence.append(f"Last used {idle:,.0f} days ago{where}.")
+
+            yield Finding(
+                check="stale-access-keys",
+                module=MODULE,
+                title=title,
+                resource=Resource(
+                    id=key_id,
+                    kind="iam:access-key",
+                    region=GLOBAL,
+                    name=name,
+                    tags=tags,
+                ),
+                evidence=tuple(evidence),
+                recommendation=recommendation,
+                confidence=Confidence.HIGH,
+                severity=severity,
+            )
+
+
+def _judge_key(age: float | None, idle: float | None) -> tuple[str, Severity, str] | None:
+    """What, if anything, is wrong with one active key."""
+    deactivate = (
+        "Deactivate it, wait a week for anything to complain, then delete it. "
+        "If something still needs AWS access, give it a role instead of a key."
+    )
+    if idle is None:
+        if age is None or age < NEW_KEY_DAYS:
+            return None
+        severity = Severity.HIGH if age >= LONG_UNUSED_KEY_DAYS else Severity.MEDIUM
+        return "Access key never used", severity, deactivate
+    if idle >= UNUSED_KEY_DAYS:
+        severity = Severity.HIGH if idle >= LONG_UNUSED_KEY_DAYS else Severity.MEDIUM
+        return f"Access key unused for {idle:,.0f} days", severity, deactivate
+    if age is not None and age >= ROTATE_AFTER_DAYS:
+        return (
+            f"Access key not rotated in {age:,.0f} days",
+            Severity.LOW,
+            "Create a second key, move whatever uses this one over, then delete it - "
+            "or replace the key with a role, which rotates itself.",
+        )
+    return None
+
+
+STALE_ACCESS_KEYS = Check(
+    key="stale-access-keys",
+    title="Stale access keys",
+    looks_for="Active access keys nobody has used in months, or used for a year unrotated.",
+    actions=(
+        "iam:ListUsers",
+        "iam:ListAccessKeys",
+        "iam:GetAccessKeyLastUsed",
+        "iam:ListUserTags",
+    ),
+    run=stale_access_keys,
 )
