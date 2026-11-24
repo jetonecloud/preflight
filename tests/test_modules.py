@@ -65,8 +65,12 @@ def test_registry_matches_the_checked_in_policy():
     assert on_disk - declared == set(), "in iam/policy.json but no module claims it"
 
 
-def test_cost_and_observability_are_available():
-    assert [module.key for module in available_modules()] == ["cost", "observability"]
+def test_cost_observability_and_security_are_available():
+    assert [module.key for module in available_modules()] == [
+        "cost",
+        "observability",
+        "security",
+    ]
 
 
 def test_by_key_is_forgiving_about_case_and_space():
@@ -95,14 +99,14 @@ def test_resolve_rejects_unknown_modules():
 
 def test_resolve_rejects_modules_that_have_not_shipped():
     with pytest.raises(ModuleNotAvailableError) as caught:
-        resolve(["security"])
-    assert caught.value.keys == ("security",)
+        resolve(["reliability"])
+    assert caught.value.keys == ("reliability",)
 
 
 def test_unknown_is_reported_before_not_available():
     """A typo and a coming-soon module together: the typo is the real mistake."""
     with pytest.raises(UnknownModuleError):
-        resolve(["security", "nope"])
+        resolve(["reliability", "nope"])
 
 
 # --- checks and the actions they declare ----------------------------------
@@ -152,3 +156,23 @@ def test_a_check_must_declare_at_least_one_action():
 
     with pytest.raises(ValueError, match="declares no actions"):
         Check(key="empty", title="Empty", looks_for="nothing.", actions=(), run=lambda ctx: ())
+
+
+def test_every_check_action_is_a_real_boto3_operation():
+    """An action whose method doesn't exist would only fail against real AWS.
+
+    The stubs answer any method name, so a check calling `list_all_my_buckets`
+    would pass every test here and break on the first real scan.
+    """
+    import boto3
+
+    from preflight.core import aws
+    from preflight.core.session import CLIENT_NAMES
+
+    session = boto3.session.Session(region_name="us-east-1")
+    for module in available_modules():
+        for action in (*module.check_actions, *module.support_actions):
+            service = aws.service_of(action)
+            client = session.client(CLIENT_NAMES.get(service, service))
+            method = aws.method_name(action)
+            assert hasattr(client, method), f"{action} -> {method} isn't on the client"

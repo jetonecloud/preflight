@@ -166,6 +166,8 @@ def translate(error: Exception, *, action: str, region: str | None = None) -> Aw
 METHOD_OVERRIDES: dict[str, str] = {
     # IAM says ListAllMyBuckets; the S3 operation is ListBuckets.
     "s3:ListAllMyBuckets": "list_buckets",
+    # IAM says GetBucketPublicAccessBlock; the S3 operation drops "Bucket".
+    "s3:GetBucketPublicAccessBlock": "get_public_access_block",
 }
 
 

@@ -11,31 +11,6 @@ from __future__ import annotations
 
 from preflight.modules.base import Module
 
-SECURITY = Module(
-    key="security",
-    name="Security & IAM",
-    summary="MFA, stale access keys, root account usage, public buckets, "
-    "open security groups, CloudTrail, encryption defaults.",
-    iam_actions=(
-        "iam:GetAccountSummary",
-        "iam:GetAccountPasswordPolicy",
-        "iam:ListUsers",
-        "iam:ListAccessKeys",
-        "iam:GetAccessKeyLastUsed",
-        "iam:ListMFADevices",
-        "iam:ListRoles",
-        "iam:ListPolicies",
-        "ec2:DescribeSecurityGroups",
-        "s3:ListAllMyBuckets",
-        "s3:GetBucketLocation",
-        "s3:GetBucketPolicyStatus",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:GetEncryptionConfiguration",
-        "cloudtrail:DescribeTrails",
-        "cloudtrail:GetTrailStatus",
-    ),
-)
-
 RELIABILITY = Module(
     key="reliability",
     name="Reliability",

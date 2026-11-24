@@ -115,7 +115,7 @@ def test_the_json_report_carries_the_command_that_made_it(workdir, sample_accoun
     path = next(workdir.glob("*.json"))
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["preflight"]["command"] == (
-        f"preflight scan --modules cost,observability --role-arn {ROLE} --region us-east-1"
+        f"preflight scan --modules cost,observability,security --role-arn {ROLE} --region us-east-1"
     )
     assert data["scan"]["regions"] == ["us-east-1"]
 
@@ -200,7 +200,7 @@ def test_the_lookback_window_reaches_the_report(workdir, sample_account):
 
 
 def test_an_unavailable_module_is_rejected(workdir, sample_account):
-    result = invoke("scan", "--role-arn", ROLE, "--modules", "security", "--yes")
+    result = invoke("scan", "--role-arn", ROLE, "--modules", "reliability", "--yes")
     assert result.exit_code == 2
     assert "isn't available yet" in result.stderr
 
@@ -536,6 +536,21 @@ def test_an_account_with_nothing_wrong_says_so(workdir, monkeypatch):
         "get_resources": {"ResourceTagMappingList": []},
         "describe_alarms": {"MetricAlarms": [], "CompositeAlarms": []},
         "describe_log_groups": {"logGroups": []},
+        "get_account_summary": {"SummaryMap": {"AccountMFAEnabled": 1}},
+        "list_users": {"Users": []},
+        "describe_security_groups": {"SecurityGroups": []},
+        "list_buckets": {"Buckets": []},
+        "describe_trails": {
+            "trailList": [
+                {
+                    "Name": "audit",
+                    "TrailARN": "arn:aws:cloudtrail:us-east-1:123456789012:trail/audit",
+                    "HomeRegion": "us-east-1",
+                    "IsMultiRegionTrail": True,
+                }
+            ]
+        },
+        "get_trail_status": {"IsLogging": True},
     }
     monkeypatch.setattr(session_module, "open_session", lambda **_: StubSession(empty))
 
@@ -546,5 +561,5 @@ def test_an_account_with_nothing_wrong_says_so(workdir, monkeypatch):
 
     data = json.loads(next(workdir.glob("*.json")).read_text(encoding="utf-8"))
     assert data["summary"]["findings"] == 0
-    assert data["summary"]["checks_run"] == 12, "nine cost checks, three observability"
+    assert data["summary"]["checks_run"] == 18, "nine cost, three observability, six security"
     assert data["spend"] is None

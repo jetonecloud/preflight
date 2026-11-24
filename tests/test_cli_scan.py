@@ -129,6 +129,7 @@ def test_all_selects_every_available_module(workdir):
     expected = render_role_template(available_modules())
     assert (workdir / DEFAULT_FILENAME).read_text() == expected
     assert "Observability (observability)" in expected
+    assert "Security & IAM (security)" in expected
 
 
 # --- overwrite protection -------------------------------------------------
@@ -171,7 +172,7 @@ def test_unknown_module_is_rejected():
 
 
 def test_coming_soon_module_is_rejected_with_a_clear_reason():
-    result = invoke("scan", "--modules", "security")
+    result = invoke("scan", "--modules", "reliability")
     assert result.exit_code == 2
     assert "isn't available yet" in result.stderr
 

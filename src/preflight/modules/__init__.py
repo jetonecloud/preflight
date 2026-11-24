@@ -22,8 +22,8 @@ from preflight.modules.planned import (
     BUS_FACTOR,
     DELIVERY,
     RELIABILITY,
-    SECURITY,
 )
+from preflight.modules.security import SECURITY
 
 # Display order for the picker: available modules first, then the rest in the
 # order we expect to ship them.

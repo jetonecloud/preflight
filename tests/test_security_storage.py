@@ -25,7 +25,7 @@ def bucket(public=False, block=BLOCKED, location=None, name="assets", **more):
         "list_buckets": {"Buckets": [{"Name": name}]},
         "get_bucket_location": {"LocationConstraint": location},
         "get_bucket_policy_status": {"PolicyStatus": {"IsPublic": public}},
-        "get_bucket_public_access_block": (
+        "get_public_access_block": (
             {"PublicAccessBlockConfiguration": block}
             if block is not None
             else no_such("NoSuchPublicAccessBlockConfiguration")
