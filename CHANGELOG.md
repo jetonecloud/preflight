@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file. The format is b
 ## [Unreleased]
 
 ### Added
+- **The Security Check.** A third module, run by default, about who can get into the account and what's been left open. Six checks: a root user with no MFA or with access keys, buckets S3 reports as public (and buckets with no Block Public Access at all), security groups open to the internet on database and admin ports, console users without MFA, access keys nobody has used in months, and regions no logging CloudTrail trail covers. See [`docs/security.md`](docs/security.md).
+  - Guards throughout: web ports open to the world, groups no network interface uses, users less than a week old, keys created this month or already inactive, buckets outside the scanned regions, and any one logging trail — organisation trails included — covering a region.
+  - The role gains `iam:GetLoginProfile`, `iam:ListUserTags` and `ec2:DescribeNetworkInterfaces`, and loses `iam:GetAccountPasswordPolicy` and `s3:GetEncryptionConfiguration`, which nothing called.
+- `preflight demo` runs it too: root's leftover access key, a contractor's unused password, CI's abandoned key, Postgres open to debug a migration, an exports bucket made public for a demo, and a trail in one region of two — each next to a near-miss the guards leave alone.
+- A test asks boto3 whether every action a check declares is a real client method, since the test stubs answer anything.
 - **The Observability Check.** A second module, run by default alongside the Cost Check, about whether anyone would find out when something breaks. Three checks: alarms that notify nobody (actions switched off, no actions at all, or every SNS topic gone or without a confirmed subscriber — reported once per topic, since one subscription fixes every alarm behind it), databases and load balancers that no CloudWatch alarm mentions, and log groups with no retention period. See [`docs/observability.md`](docs/observability.md).
   - Guards throughout: alarms that scale or recover something, the children of a composite alarm, topics in another region, Aurora instances covered by a cluster alarm, alarms built from metric math, stopped or brand-new resources, and log groups under a gigabyte or less than a week old.
   - Medium confidence where it can't see everything — monitoring outside CloudWatch is invisible to it, and the finding says so.
@@ -12,6 +17,7 @@ All notable changes to this project are documented in this file. The format is b
 - `preflight demo` runs it too, against a sample account with a muted staging alarm, database alarms sent to a topic whose email nobody confirmed, an unwatched database in Ireland, and Lambda logs kept since launch — each next to a near-miss the guards correctly leave alone.
 
 ### Fixed
+- `s3:ListAllMyBuckets` and `s3:GetBucketPublicAccessBlock` are called by their S3 operation names (`ListBuckets`, `GetPublicAccessBlock`), which the IAM names don't match.
 - Findings without a dollar figure no longer get one. The report printed `-/month` after them, `$0.00/month` above a check that prices nothing, and an "Estimated saving" of zero for a scan that found plenty. Now the figure is left out, and a report with nothing priced leads with how many findings it has — in the terminal and in the PDF.
 - `preflight demo` recursed until the stack ran out if a check asked the sample account for an operation it had no answer for. It now answers with nothing.
 

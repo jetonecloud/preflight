@@ -95,6 +95,25 @@ None of these comes with a dollar figure, and the report doesn't invent one. The
 preflight scan --role-arn <arn> --modules observability   # just this one
 ```
 
+## What the Security Check looks for
+
+Who can get into the account, and what's been left open.
+
+| Check | Looks for |
+|---|---|
+| Root user unguarded | No MFA on the root user, or access keys of its own |
+| Public buckets | Buckets S3 itself reports as public, and buckets nothing stops going public |
+| Security groups open to the internet | Databases, RDP, Redis and the like reachable from anywhere, on groups something is using |
+| Console users without MFA | IAM users who sign in with a password alone |
+| Stale access keys | Active keys nobody has used in months, or used for a year unrotated |
+| CloudTrail coverage | Regions no trail is recording, and trails that have stopped logging |
+
+No dollar figures here either. The guards still hold: 443 open to the world is a web server doing its job, a group nothing uses isn't exposed, a user who started this week gets a week to set up MFA, and one logging trail is enough. [`docs/security.md`](docs/security.md) has the details.
+
+```sh
+preflight scan --role-arn <arn> --modules security   # just this one
+```
+
 ## Permissions and your data
 
 [`iam/policy.json`](iam/policy.json) uses only `Get`, `List` and `Describe` actions, with no wildcards. Each check declares what it needs, so a generated role covers the checks you picked and nothing else — Preflight refuses to emit a policy containing a write verb or a wildcard.

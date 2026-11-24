@@ -10,7 +10,7 @@ Run it on its own:
 preflight scan --modules observability --role-arn arn:aws:iam::123456789012:role/PreflightReadOnlyRole
 ```
 
-Leave `--modules` off and it runs alongside the Cost Check. To see the checks
+Leave `--modules` off and it runs alongside the Cost and Security Checks. To see the checks
 and the exact permissions each one needs, without an account:
 
 ```sh
