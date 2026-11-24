@@ -227,6 +227,7 @@ def test_an_unreachable_endpoint_is_a_region_problem():
         ("tag:GetResources", "get_resources"),
         ("cloudwatch:GetMetricStatistics", "get_metric_statistics"),
         ("elasticloadbalancing:DescribeTargetHealth", "describe_target_health"),
+        ("s3:ListAllMyBuckets", "list_buckets"),
     ],
 )
 def test_iam_actions_map_onto_boto3_methods(action, method):

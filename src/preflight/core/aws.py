@@ -161,13 +161,24 @@ def translate(error: Exception, *, action: str, region: str | None = None) -> Aw
     return AwsError(f"{action} failed: {type(error).__name__}: {error}")
 
 
+#: The few IAM actions whose API operation has a different name, so no
+#: transform of the action can find the method.
+METHOD_OVERRIDES: dict[str, str] = {
+    # IAM says ListAllMyBuckets; the S3 operation is ListBuckets.
+    "s3:ListAllMyBuckets": "list_buckets",
+}
+
+
 def method_name(action: str) -> str:
     """`rds:DescribeDBInstances` -> `describe_db_instances`.
 
     Uses botocore's own name transform, which is what generated the client's
     methods in the first place, so the irregular ones (`DescribeDBInstances`)
-    come out right without a lookup table.
+    come out right without a lookup table. `METHOD_OVERRIDES` covers the
+    actions that don't share a name with their operation at all.
     """
+    if action in METHOD_OVERRIDES:
+        return METHOD_OVERRIDES[action]
     return xform_name(action.split(":", 1)[1])
 
 
