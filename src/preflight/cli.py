@@ -953,14 +953,26 @@ def diff(
             help="Where to look for exports when they aren't both named. Default: here.",
         ),
     ] = None,
+    as_json: Annotated[
+        bool,
+        typer.Option("--json", help="Also print the comparison as JSON on stdout."),
+    ] = False,
+    fail_on_new: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-new",
+            help="Exit 1 if the later scan found anything the earlier one didn't.",
+        ),
+    ] = False,
 ) -> None:
     """Compare two scans of one account: what got fixed, and what's new.
 
     Reads two JSON exports a scan already wrote. No AWS calls, no
     credentials. Name both, name the earlier one and let it find the
     newest scan since, or name neither and it compares the last two scans
-    in this directory. A finding the later scan didn't look for - a
-    skipped check, a region left out - is never counted as fixed.
+    in this directory. --fail-on-new makes it a CI gate. A finding the
+    later scan didn't look for - a skipped check, a region left out - is
+    never counted as fixed.
     """
     from preflight.core.compare import CompareError, compare, latest_pair, load
 
@@ -980,6 +992,14 @@ def diff(
     except CompareError as exc:
         _fail(str(exc), exc.hint, code=2)
     ui.print_comparison(comparison)
+    if as_json:
+        ui.payload.out(comparison.to_json(), end="", highlight=False)
+    if fail_on_new and comparison.new:
+        count = len(comparison.new)
+        ui.print_error(
+            f"{count} new {'finding' if count == 1 else 'findings'} since the last scan."
+        )
+        raise typer.Exit(1)
 
 
 @app.command()

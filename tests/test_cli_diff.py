@@ -147,3 +147,52 @@ def test_nothing_newer_than_the_named_scan(tmp_path):
     result = invoke("diff", old, "--in", tmp_path)
     assert result.exit_code == 2
     assert "No later scan" in result.stderr
+
+
+# --- scripts and CI -----------------------------------------------------------
+
+
+def test_json_goes_to_stdout_and_parses(tmp_path):
+    from preflight.core.compare import DIFF_SCHEMA_VERSION
+
+    kept, gone = item(resource="vol-0aaa", monthly=10.0), item(resource="vol-0bbb", monthly=90.0)
+    worse = item(resource="vol-0aaa", monthly=30.0)
+    result = invoke("diff", *pair(tmp_path, [kept, gone], [worse]), "--json")
+    assert result.exit_code == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["schema_version"] == DIFF_SCHEMA_VERSION
+    assert data["summary"]["fixed"] == 1
+    assert data["summary"]["fixed_monthly_usd"] == 90.0
+    assert data["summary"]["like_for_like"] is True
+    assert [f["id"] for f in data["fixed"]] == [gone["id"]]
+    (change,) = data["changed"]
+    assert change["monthly_usd"] == {"before": 10.0, "after": 30.0}
+    assert data["still_open"] == [kept["id"]]
+    assert "Fixed - gone" in result.stderr, "the human copy still goes to stderr"
+
+
+def test_json_carries_the_reason_a_finding_cant_be_vouched_for(tmp_path):
+    old, new = pair(tmp_path, [item()], [], checks={"unattached-ebs-volumes": "skipped"})
+    data = json.loads(invoke("diff", old, new, "--json").stdout)
+    (entry,) = data["unverified"]
+    assert entry["reason"] == "unattached-ebs-volumes was skipped"
+    assert data["summary"]["like_for_like"] is False
+
+
+def test_fail_on_new_fails_when_something_is_new(tmp_path):
+    old, new = pair(tmp_path, [], [item()])
+    result = invoke("diff", old, new, "--fail-on-new")
+    assert result.exit_code == 1
+    assert "1 new finding since the last scan" in result.stderr
+
+
+def test_fail_on_new_passes_when_nothing_is_new(tmp_path):
+    old, new = pair(tmp_path, [item()], [])
+    assert invoke("diff", old, new, "--fail-on-new").exit_code == 0
+
+
+def test_fail_on_new_ignores_findings_the_earlier_scan_couldnt_see(tmp_path):
+    """Widening a scan to a new region shouldn't fail the build."""
+    old = write(tmp_path / "old.json", export([], regions=("us-east-1",)))
+    new = write(tmp_path / "new.json", export([item(region="eu-west-1")], when=LATER))
+    assert invoke("diff", old, new, "--fail-on-new").exit_code == 0

@@ -18,6 +18,10 @@ from typing import Any
 
 from preflight.core.report import SCHEMA_VERSION
 
+#: The shape of `preflight diff --json`. Versioned on the same terms as the
+#: scan export: added fields don't bump it, renamed or removed ones do.
+DIFF_SCHEMA_VERSION = 1
+
 
 class CompareError(Exception):
     """Two exports that can't be read, or can't be compared honestly."""
@@ -229,6 +233,65 @@ class Comparison:
     @property
     def unchanged(self) -> bool:
         return not self.fixed and not self.new and not self.changed
+
+    def to_dict(self) -> dict[str, Any]:
+        """The comparison for a script: counts, money, and every finding by bucket."""
+
+        def side(snapshot: Snapshot) -> dict[str, Any]:
+            return {
+                "path": str(snapshot.path) if snapshot.path else None,
+                "finished_at": snapshot.finished_at.isoformat(timespec="seconds"),
+                "regions": list(snapshot.regions),
+                "modules": list(snapshot.modules),
+                "findings": len(snapshot.findings),
+            }
+
+        def unseen(items: tuple[Unseen, ...]) -> list[dict[str, Any]]:
+            return [{"finding": entry.item, "reason": entry.reason} for entry in items]
+
+        return {
+            "schema_version": DIFF_SCHEMA_VERSION,
+            "account": {"id": self.after.account_id},
+            "before": side(self.before),
+            "after": side(self.after),
+            "summary": {
+                "fixed": len(self.fixed),
+                "new": len(self.new),
+                "still_open": len(self.still_open),
+                "changed": len(self.changed),
+                "unverified": len(self.unverified),
+                "first_seen": len(self.first_seen),
+                "like_for_like": self.like_for_like,
+                "priced": self.priced,
+                "fixed_monthly_usd": round(self.fixed_monthly, 2),
+                "new_monthly_usd": round(self.new_monthly, 2),
+                "open_monthly_usd_before": round(self.monthly_before, 2),
+                "open_monthly_usd_after": round(self.monthly_after, 2),
+            },
+            "fixed": list(self.fixed),
+            "new": list(self.new),
+            "changed": [
+                {
+                    "id": change.id,
+                    "severity": {
+                        "before": change.before.get("severity"),
+                        "after": change.after.get("severity"),
+                    },
+                    "monthly_usd": {
+                        "before": monthly(change.before),
+                        "after": monthly(change.after),
+                    },
+                    "finding": change.after,
+                }
+                for change in self.changed
+            ],
+            "still_open": [change.id for change in self.still_open],
+            "unverified": unseen(self.unverified),
+            "first_seen": unseen(self.first_seen),
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2) + "\n"
 
     @property
     def like_for_like(self) -> bool:
