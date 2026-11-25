@@ -937,6 +937,27 @@ def scan(
 
 
 @app.command()
+def diff(
+    before: Annotated[Path, typer.Argument(help="The earlier scan's JSON export.")],
+    after: Annotated[Path, typer.Argument(help="The later scan's JSON export.")],
+) -> None:
+    """Compare two scans of one account: what got fixed, and what's new.
+
+    Reads two JSON exports a scan already wrote. No AWS calls, no
+    credentials. A finding the later scan didn't look for - a skipped
+    check, a region left out - is never counted as fixed.
+    """
+    from preflight.core.compare import CompareError, compare, load
+
+    ui.print_banner()
+    try:
+        comparison = compare(load(before), load(after))
+    except CompareError as exc:
+        _fail(str(exc), exc.hint, code=2)
+    ui.print_comparison(comparison)
+
+
+@app.command()
 def preview() -> None:
     """Show exactly what would be sent if you opt in to email delivery."""
     typer.echo("preview: not yet implemented")

@@ -1187,3 +1187,135 @@ def print_scan_footer(seconds: float) -> None:
         f"Finished in {seconds:.1f}s.[/dim]"
     )
     console.print("  [dim]Want a hand fixing these? [/dim]https://jetonecloud.com/book")
+
+
+# --- comparing two scans ----------------------------------------------------
+#
+# `preflight diff` reads two exports back rather than an account, so what it
+# prints works from the exported dicts, not `Finding`s. Same ASCII, same
+# rules: a word next to every colour, and no figure nobody can check.
+
+
+def _item_label(item: Mapping[str, Any]) -> str:
+    resource = item.get("resource") or {}
+    name, ident = resource.get("name"), resource.get("id", "")
+    where = resource.get("region", "")
+    label = f"{name} ({ident})" if name else str(ident)
+    return f"{label} - {where}" if where else label
+
+
+def _item_cost(item: Mapping[str, Any]) -> str:
+    from preflight.core.compare import monthly
+    from preflight.core.report import per_month
+
+    cost = per_month(monthly(item))
+    return f" [dim]({cost})[/dim]" if cost else ""
+
+
+def _print_items(marker: str, items: Sequence[Mapping[str, Any]], note: str | None = None) -> None:
+    for item in items:
+        title = escape(str(item.get("title", item["id"])))
+        console.print(_hanging(marker, f"[bold]{title}[/bold]{_item_cost(item)}"))
+        detail = escape(_item_label(item))
+        if note:
+            detail += f" - {escape(note)}"
+        console.print(_indented(f"[dim]{detail}[/dim]", indent=6))
+    console.print()
+
+
+def print_comparison(comparison: Any) -> None:
+    """What happened to an account between two scans of it."""
+    from preflight.core.compare import monthly
+    from preflight.core.report import money, plural
+
+    before, after = comparison.before, comparison.after
+    days = (after.finished_at - before.finished_at).days
+    apart = f"{days} {plural(days, 'day')} apart" if days else "the same day"
+    console.print(_indented(f"[dim]Account[/dim] [cyan]{escape(after.account_id)}[/cyan]"))
+    console.print(_indented(f"[dim]{before.label} -> {after.label} ({apart})[/dim]"))
+    console.print()
+    if comparison.swapped:
+        print_hint("The newer export was given first, so the two have been swapped.\n")
+    if before.demo or after.demo:
+        print_caution("Sample data.", "At least one of these came from preflight demo.")
+
+    if comparison.priced:
+        console.print(
+            Panel(
+                Text.assemble(
+                    (f"{money(comparison.fixed_monthly)}/month fixed", "bold green"),
+                    (
+                        f"  -  {money(comparison.monthly_before)}/month open before, "
+                        f"{money(comparison.monthly_after)}/month now",
+                        "dim",
+                    ),
+                ),
+                title="Since the last scan",
+                title_align="left",
+                box=BOX,
+                border_style="green",
+                padding=(0, 2),
+                expand=False,
+            )
+        )
+        console.print()
+
+    table = Table(box=BOX, header_style="dim", border_style="dim")
+    for column in ("Fixed", "New", "Still open", "Changed", "Can't tell"):
+        table.add_column(column, justify="right")
+    counts = (
+        (len(comparison.fixed), "green"),
+        (len(comparison.new), "red"),
+        (len(comparison.still_open), "bold"),
+        (len(comparison.changed), "yellow"),
+        (len(comparison.unverified) + len(comparison.first_seen), "dim"),
+    )
+    table.add_row(*(Text(str(n), style=style if n else "dim") for n, style in counts))
+    console.print(Padding(table, (0, 0, 0, 2), expand=False))
+    console.print()
+
+    if comparison.unchanged and comparison.like_for_like:
+        console.print(
+            _indented("[bold]Nothing moved.[/bold] [dim]Same findings, same figures.[/dim]")
+        )
+        console.print()
+        return
+
+    if comparison.fixed:
+        print_heading("Fixed", f"gone since {before.label}")
+        _print_items("[green]ok[/green]", comparison.fixed)
+    if comparison.new:
+        print_heading("New", "not in the earlier scan")
+        _print_items("[red]+[/red]", comparison.new)
+    if comparison.changed:
+        print_heading("Changed", "still open, but moved")
+        for change in comparison.changed:
+            console.print(
+                _hanging("[yellow]~[/yellow]", f"[bold]{escape(str(change.after['title']))}[/bold]")
+            )
+            moves = []
+            if change.severity_changed:
+                moves.append(f"{change.before['severity']} -> {change.after['severity']}")
+            if abs(change.monthly_delta) >= 0.01:
+                moves.append(
+                    f"{money(monthly(change.before) or 0.0)} -> "
+                    f"{money(monthly(change.after) or 0.0)}/month"
+                )
+            detail = f"{_item_label(change.after)} - {', '.join(moves)}"
+            console.print(_indented(f"[dim]{escape(detail)}[/dim]", indent=6))
+        console.print()
+    if comparison.unverified:
+        print_heading("Can't tell", "the later scan didn't look")
+        for unseen in comparison.unverified:
+            _print_items("[dim]?[/dim]", [unseen.item], unseen.reason)
+    if comparison.first_seen:
+        print_heading("Seen for the first time", "the earlier scan didn't look")
+        for unseen in comparison.first_seen:
+            _print_items("[dim]?[/dim]", [unseen.item], unseen.reason)
+    if comparison.still_open:
+        count = len(comparison.still_open)
+        print_hint(
+            f"{count} {plural(count, 'finding')} open in both scans - "
+            "the later report has each of them in full."
+        )
+        console.print()
