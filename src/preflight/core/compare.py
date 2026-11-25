@@ -197,6 +197,8 @@ class Comparison:
     #: Absent before, present now - but the earlier scan didn't look where it
     #: is, so it may have been there all along. Not counted as new.
     first_seen: tuple[Unseen, ...] = ()
+    #: The files were given newest first and have been put the right way round.
+    swapped: bool = False
 
     @property
     def changed(self) -> tuple[Change, ...]:
@@ -234,8 +236,40 @@ class Comparison:
         return not self.unverified and not self.first_seen
 
 
+def check_comparable(first: Snapshot, second: Snapshot) -> None:
+    """Refuse the pairs whose comparison would be wrong rather than empty."""
+    if first.path and second.path and first.path.resolve() == second.path.resolve():
+        raise CompareError(
+            f"That's the same export twice ({first.path.name}).",
+            "Pass an older scan and a newer one.",
+        )
+    if first.redacted or second.redacted:
+        which = first if first.redacted else second
+        name = which.path.name if which.path else "One of the exports"
+        raise CompareError(
+            f"{name} was redacted, so its findings can't be matched up.",
+            "Redaction numbers resources per report - vol-1 in one scan isn't vol-1 "
+            "in the next. Compare the exports written without --redact.",
+        )
+    if first.account_id != second.account_id:
+        raise CompareError(
+            f"These are scans of two different accounts "
+            f"({first.account_id} and {second.account_id}).",
+            "A comparison only means something for one account over time.",
+        )
+
+
 def compare(before: Snapshot, after: Snapshot) -> Comparison:
-    """Match `before` and `after` finding by finding."""
+    """Match `before` and `after` finding by finding.
+
+    The pair is checked first, and put in time order if it came newest
+    first: "fixed" and "new" only mean something one way round.
+    """
+    check_comparable(before, after)
+    swapped = before.finished_at > after.finished_at
+    if swapped:
+        before, after = after, before
+
     gone: list[dict[str, Any]] = []
     unverified: list[Unseen] = []
     for key, item in before.findings.items():
@@ -272,4 +306,5 @@ def compare(before: Snapshot, after: Snapshot) -> Comparison:
         still_open=tuple(both),
         unverified=tuple(sorted(unverified, key=lambda unseen: unseen.id)),
         first_seen=tuple(sorted(first_seen, key=lambda unseen: unseen.id)),
+        swapped=swapped,
     )

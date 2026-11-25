@@ -246,3 +246,41 @@ def test_newly_checked_isnt_new():
     assert not result.new
     (unseen,) = result.first_seen
     assert unseen.reason == "eu-west-1 wasn't scanned"
+
+
+# --- refusing what can't be compared -----------------------------------------
+
+
+def test_two_accounts_are_refused():
+    from preflight.core.compare import compare
+
+    with pytest.raises(CompareError, match="two different accounts"):
+        compare(snap(), snap(when=LATER, account="210987654321"))
+
+
+def test_a_redacted_export_is_refused_with_the_reason():
+    from preflight.core.compare import compare
+
+    with pytest.raises(CompareError, match="redacted") as raised:
+        compare(snap(), snap(when=LATER, redacted=True))
+    assert "without --redact" in (raised.value.hint or "")
+
+
+def test_the_same_file_twice_is_refused(tmp_path):
+    from preflight.core.compare import compare
+
+    path = tmp_path / "scan.json"
+    path.write_text(json.dumps(export()), encoding="utf-8")
+    with pytest.raises(CompareError, match="same export twice"):
+        compare(load(path), load(path))
+
+
+def test_newest_first_is_put_the_right_way_round():
+    from preflight.core.compare import compare
+
+    old, new = item(resource="vol-1"), item(resource="vol-2")
+    result = compare(snap([new], when=LATER), snap([old]))
+    assert result.swapped
+    assert result.before.finished_at == EARLIER
+    assert [f["id"] for f in result.fixed] == [old["id"]]
+    assert [f["id"] for f in result.new] == [new["id"]]
