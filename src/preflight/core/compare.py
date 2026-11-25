@@ -145,6 +145,41 @@ class Change:
 
 
 @dataclass(frozen=True)
+class Unseen:
+    """A finding one scan has and the other couldn't have seen, and why."""
+
+    item: dict[str, Any]
+    reason: str
+
+    @property
+    def id(self) -> str:
+        return str(self.item["id"])
+
+
+def blind_spot(item: dict[str, Any], scan: Snapshot, other: Snapshot) -> str | None:
+    """Why `scan` couldn't have reported `item`, or `None` if it looked.
+
+    `other` is the scan that did report it, which is how a region is told
+    apart from a global resource: IAM users live in no region either scan
+    listed, so a region missing from both says nothing about coverage.
+    """
+    module, check, region = item.get("module"), item.get("check"), item.get("resource", {})
+    region = region.get("region") if isinstance(region, dict) else None
+    if module not in scan.modules:
+        return f"the {module} module wasn't run"
+    status = scan.checks.get(str(check))
+    if status is None:
+        return f"{check} wasn't run"
+    if status == "failed":
+        return f"{check} failed"
+    if status != "ran":
+        return f"{check} was {status}"
+    if region and region in other.regions and region not in scan.regions:
+        return f"{region} wasn't scanned"
+    return None
+
+
+@dataclass(frozen=True)
 class Comparison:
     """What happened to an account between two scans of it."""
 
@@ -156,6 +191,12 @@ class Comparison:
     new: tuple[dict[str, Any], ...]
     #: Present in both.
     still_open: tuple[Change, ...]
+    #: Present before, absent now - but the later scan didn't look where it
+    #: was, so it may well still be there. Never counted as fixed.
+    unverified: tuple[Unseen, ...] = ()
+    #: Absent before, present now - but the earlier scan didn't look where it
+    #: is, so it may have been there all along. Not counted as new.
+    first_seen: tuple[Unseen, ...] = ()
 
     @property
     def changed(self) -> tuple[Change, ...]:
@@ -187,11 +228,36 @@ class Comparison:
     def unchanged(self) -> bool:
         return not self.fixed and not self.new and not self.changed
 
+    @property
+    def like_for_like(self) -> bool:
+        """Whether both scans looked at the same things."""
+        return not self.unverified and not self.first_seen
+
 
 def compare(before: Snapshot, after: Snapshot) -> Comparison:
     """Match `before` and `after` finding by finding."""
-    gone = [item for key, item in before.findings.items() if key not in after.findings]
-    arrived = [item for key, item in after.findings.items() if key not in before.findings]
+    gone: list[dict[str, Any]] = []
+    unverified: list[Unseen] = []
+    for key, item in before.findings.items():
+        if key in after.findings:
+            continue
+        reason = blind_spot(item, after, before)
+        if reason:
+            unverified.append(Unseen(item, reason))
+        else:
+            gone.append(item)
+
+    arrived: list[dict[str, Any]] = []
+    first_seen: list[Unseen] = []
+    for key, item in after.findings.items():
+        if key in before.findings:
+            continue
+        reason = blind_spot(item, before, after)
+        if reason:
+            first_seen.append(Unseen(item, reason))
+        else:
+            arrived.append(item)
+
     both = [
         Change(before=before.findings[key], after=item)
         for key, item in after.findings.items()
@@ -204,4 +270,6 @@ def compare(before: Snapshot, after: Snapshot) -> Comparison:
         fixed=_order(gone),
         new=_order(arrived),
         still_open=tuple(both),
+        unverified=tuple(sorted(unverified, key=lambda unseen: unseen.id)),
+        first_seen=tuple(sorted(first_seen, key=lambda unseen: unseen.id)),
     )

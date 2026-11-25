@@ -181,5 +181,68 @@ def test_biggest_saving_comes_first():
 
     small, big = item(resource="vol-1", monthly=5.0), item(resource="vol-2", monthly=90.0)
     unpriced = item("public-buckets", "exports", module="security", monthly=None)
-    result = compare(snap([small, big, unpriced]), snap([], when=LATER))
+    checks = {"unattached-ebs-volumes": "ran", "public-buckets": "ran"}
+    result = compare(snap([small, big, unpriced]), snap([], when=LATER, checks=checks))
     assert [f["id"] for f in result.fixed] == [big["id"], small["id"], unpriced["id"]]
+
+
+# --- not calling it fixed when nobody looked ----------------------------------
+
+
+def _gone_because(after: Snapshot, finding: dict | None = None) -> str:
+    from preflight.core.compare import compare
+
+    finding = finding or item()
+    result = compare(snap([finding]), after)
+    assert not result.fixed, "nobody looked, so nothing was fixed"
+    (unseen,) = result.unverified
+    assert unseen.id == finding["id"]
+    assert not result.like_for_like
+    return unseen.reason
+
+
+def test_a_skipped_check_fixed_nothing():
+    after = snap(when=LATER, checks={"unattached-ebs-volumes": "skipped"})
+    assert _gone_because(after) == "unattached-ebs-volumes was skipped"
+
+
+def test_a_failed_check_fixed_nothing():
+    after = snap(when=LATER, checks={"unattached-ebs-volumes": "failed"})
+    assert _gone_because(after) == "unattached-ebs-volumes failed"
+
+
+def test_a_check_left_out_with_only_fixed_nothing():
+    after = snap(when=LATER, checks={"idle-nat-gateways": "ran"})
+    assert _gone_because(after) == "unattached-ebs-volumes wasn't run"
+
+
+def test_a_module_left_out_fixed_nothing():
+    after = snap(when=LATER, modules=("observability",), checks={"alarms-notify-nobody": "ran"})
+    assert _gone_because(after) == "the cost module wasn't run"
+
+
+def test_a_region_left_out_fixed_nothing():
+    after = snap(when=LATER, regions=("us-east-1",))
+    finding = item(region="eu-west-1")
+    assert _gone_because(after, finding) == "eu-west-1 wasn't scanned"
+
+
+def test_a_global_resource_isnt_lost_to_a_region_filter():
+    from preflight.core.compare import compare
+
+    root = item("root-user-unguarded", "root", module="security", region="global", monthly=None)
+    before = snap([root], checks={"root-user-unguarded": "ran"})
+    after = snap(when=LATER, regions=("us-east-1",), checks={"root-user-unguarded": "ran"})
+    result = compare(before, after)
+    assert [f["id"] for f in result.fixed] == [root["id"]]
+
+
+def test_newly_checked_isnt_new():
+    from preflight.core.compare import compare
+
+    finding = item(region="eu-west-1")
+    before = snap([], regions=("us-east-1",))
+    result = compare(before, snap([finding], when=LATER))
+    assert not result.new
+    (unseen,) = result.first_seen
+    assert unseen.reason == "eu-west-1 wasn't scanned"
