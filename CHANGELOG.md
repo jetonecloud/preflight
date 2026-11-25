@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file. The format is b
 ## [Unreleased]
 
 ### Added
+- **`preflight diff`: did it work?** Compares two scans of one account from their JSON exports — no AWS calls — and says what was fixed, what's new, what's still open, and what moved (a severity or a monthly figure that changed), leading with the monthly figure fixed when anything is priced. See [`docs/compare.md`](docs/compare.md).
+  - A finding is only called fixed if the later scan looked for it. A check that was skipped, failed or left out with `--only`, a module not selected, or a region narrowed away puts it under *can't tell*, with the reason. The same goes the other way: a region scanned for the first time doesn't make everything in it new.
+  - Name both exports, name only the earlier one and it finds the newest scan of that account since, or name neither and it compares the last two scans in the directory (`--in` for another one).
+  - Refuses two different accounts, redacted exports (pseudonyms are numbered per report, so they can't be matched), the same file twice, and exports from a newer Preflight — each with what to do instead.
+  - `--json` prints the comparison on stdout, versioned (`schema_version: 1`); `--fail-on-new` exits 1 when anything new turned up, for a scheduled scan in CI.
 - **The Security Check.** A third module, run by default, about who can get into the account and what's been left open. Six checks: a root user with no MFA or with access keys, buckets S3 reports as public (and buckets with no Block Public Access at all), security groups open to the internet on database and admin ports, console users without MFA, access keys nobody has used in months, and regions no logging CloudTrail trail covers. See [`docs/security.md`](docs/security.md).
   - Guards throughout: web ports open to the world, groups no network interface uses, users less than a week old, keys created this month or already inactive, buckets outside the scanned regions, and any one logging trail — organisation trails included — covering a region.
   - The role gains `iam:GetLoginProfile`, `iam:ListUserTags` and `ec2:DescribeNetworkInterfaces`, and loses `iam:GetAccountPasswordPolicy` and `s3:GetEncryptionConfiguration`, which nothing called.

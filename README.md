@@ -54,6 +54,17 @@ preflight scan --role-arn <arn> --pdf --no-json  # the PDF and nothing else
 
 Each flag answers one question, so `--pdf` alone still asks about the JSON. Where there's nobody to ask — a pipe, CI, `--yes` — you get the terminal report and the JSON. `--out <dir>` puts the files somewhere else.
 
+## Did it work?
+
+Scan again after fixing things, and compare:
+
+```sh
+preflight diff                  # the last two scans in this directory
+preflight diff --fail-on-new    # exit 1 if anything new turned up, for CI
+```
+
+It reads the two JSON exports — no AWS calls — and says what was fixed, what's new, and what moved, with the monthly figure fixed when there is one. A finding is only called fixed if the later scan looked for it: a skipped check or a region left out puts it under *can't tell* instead. [`docs/compare.md`](docs/compare.md) has the details.
+
 ## What the Cost Check looks for
 
 | Check | Looks for |

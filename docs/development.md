@@ -4,7 +4,7 @@ Everything you need to build, run and poke at Preflight locally. For the
 rules a change has to follow, see [`CONTRIBUTING.md`](../CONTRIBUTING.md);
 for what the checks actually do, see
 [`cost-check.md`](cost-check.md), [`observability.md`](observability.md)
-and [`security.md`](security.md).
+and [`security.md`](security.md); for comparing scans, [`compare.md`](compare.md).
 
 ## Setup, once
 
@@ -43,6 +43,17 @@ see:
 
 ```sh
 uv run preflight demo --no-json 2>&1 | less
+```
+
+## Compare two scans
+
+`diff` reads two exports back, so two demo runs are enough to try it —
+though with nothing changed in between, it'll say so:
+
+```sh
+uv run preflight demo --terminal --out ./samples
+uv run preflight demo --terminal --out ./samples
+uv run preflight diff --in ./samples
 ```
 
 ## Generate the read-only role
@@ -136,6 +147,7 @@ CI runs the same lint and tests, plus a check that
 | [`src/preflight/core/scan.py`](../src/preflight/core/scan.py) | The runner, and the guard that refuses any call a check didn't declare |
 | [`src/preflight/core/findings.py`](../src/preflight/core/findings.py) | `Finding`, `Severity`, `Confidence`, `Estimate` |
 | [`src/preflight/core/report.py`](../src/preflight/core/report.py) | `ScanResult` and the JSON schema |
+| [`src/preflight/core/compare.py`](../src/preflight/core/compare.py) | Reading exports back, and matching two scans for `preflight diff` |
 | [`src/preflight/ui.py`](../src/preflight/ui.py) | Everything printed: the pickers, and the report and its pager |
 | [`src/preflight/core/paper.py`](../src/preflight/core/paper.py) | The same report, laid out on pages, for the PDF |
 | [`src/preflight/core/pdf.py`](../src/preflight/core/pdf.py) | The PDF writer: text, rules, tables, images, and the object graph. No dependencies |

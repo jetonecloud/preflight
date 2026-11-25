@@ -167,7 +167,8 @@ printed in order.
 Every scan writes a stable, versioned document (`schema_version: 1`)
 alongside the printed report, unless you pass `--no-json`. Finding IDs are
 stable across scans — same resource, same check, same string — so two
-reports can be diffed to see what actually got fixed.
+reports can be compared to see what actually got fixed — `preflight diff`
+does it for you; see [`compare.md`](compare.md).
 
 ```jsonc
 {
