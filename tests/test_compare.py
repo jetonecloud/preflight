@@ -116,3 +116,70 @@ def test_a_truncated_export_names_what_is_missing():
     del data["scan"]
     with pytest.raises(CompareError, match="missing part"):
         Snapshot.from_dict(json.loads(json.dumps(data)))
+
+
+# --- matching findings up ----------------------------------------------------
+
+
+def snap(findings: list[dict] | None = None, **kwargs) -> Snapshot:
+    return Snapshot.from_dict(export(findings, **kwargs))
+
+
+def test_gone_is_fixed_and_arrived_is_new():
+    from preflight.core.compare import compare
+
+    kept, gone, arrived = item(resource="vol-1"), item(resource="vol-2"), item(resource="vol-3")
+    result = compare(snap([kept, gone]), snap([kept, arrived], when=LATER))
+    assert [f["id"] for f in result.fixed] == [gone["id"]]
+    assert [f["id"] for f in result.new] == [arrived["id"]]
+    assert [c.id for c in result.still_open] == [kept["id"]]
+    assert not result.changed
+
+
+def test_money_adds_up_on_both_sides():
+    from preflight.core.compare import compare
+
+    before = [item(resource="vol-1", monthly=100.0), item(resource="vol-2", monthly=40.0)]
+    after = [item(resource="vol-1", monthly=100.0), item(resource="vol-3", monthly=12.5)]
+    result = compare(snap(before), snap(after, when=LATER))
+    assert result.fixed_monthly == 40.0
+    assert result.new_monthly == 12.5
+    assert result.monthly_before == 140.0
+    assert result.monthly_after == 112.5
+    assert result.priced
+
+
+def test_an_unpriced_comparison_says_so():
+    from preflight.core.compare import compare
+
+    alarm = item("alarms-notify-nobody", "web-5xx", module="observability", monthly=None)
+    result = compare(snap([alarm]), snap([], when=LATER))
+    assert not result.priced
+    assert result.fixed_monthly == 0.0
+
+
+def test_a_finding_that_got_worse_is_changed():
+    from preflight.core.compare import compare
+
+    before = item(monthly=40.0, severity="medium")
+    after = item(monthly=120.0, severity="high")
+    (change,) = compare(snap([before]), snap([after], when=LATER)).changed
+    assert change.severity_changed
+    assert change.monthly_delta == 80.0
+
+
+def test_rounding_isnt_a_change():
+    from preflight.core.compare import compare
+
+    result = compare(snap([item(monthly=40.0)]), snap([item(monthly=40.004)], when=LATER))
+    assert not result.changed
+    assert result.unchanged
+
+
+def test_biggest_saving_comes_first():
+    from preflight.core.compare import compare
+
+    small, big = item(resource="vol-1", monthly=5.0), item(resource="vol-2", monthly=90.0)
+    unpriced = item("public-buckets", "exports", module="security", monthly=None)
+    result = compare(snap([small, big, unpriced]), snap([], when=LATER))
+    assert [f["id"] for f in result.fixed] == [big["id"], small["id"], unpriced["id"]]
