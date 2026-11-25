@@ -938,20 +938,45 @@ def scan(
 
 @app.command()
 def diff(
-    before: Annotated[Path, typer.Argument(help="The earlier scan's JSON export.")],
-    after: Annotated[Path, typer.Argument(help="The later scan's JSON export.")],
+    before: Annotated[
+        Path | None,
+        typer.Argument(help="The earlier scan's JSON export. Default: the second-newest."),
+    ] = None,
+    after: Annotated[
+        Path | None,
+        typer.Argument(help="The later scan's JSON export. Default: the newest."),
+    ] = None,
+    directory: Annotated[
+        Path | None,
+        typer.Option(
+            "--in",
+            help="Where to look for exports when they aren't both named. Default: here.",
+        ),
+    ] = None,
 ) -> None:
     """Compare two scans of one account: what got fixed, and what's new.
 
     Reads two JSON exports a scan already wrote. No AWS calls, no
-    credentials. A finding the later scan didn't look for - a skipped
-    check, a region left out - is never counted as fixed.
+    credentials. Name both, name the earlier one and let it find the
+    newest scan since, or name neither and it compares the last two scans
+    in this directory. A finding the later scan didn't look for - a
+    skipped check, a region left out - is never counted as fixed.
     """
-    from preflight.core.compare import CompareError, compare, load
+    from preflight.core.compare import CompareError, compare, latest_pair, load
 
     ui.print_banner()
     try:
-        comparison = compare(load(before), load(after))
+        if before is not None and after is not None:
+            first, second = load(before), load(after)
+        else:
+            first, second = latest_pair(
+                directory or Path.cwd(), load(before) if before is not None else None
+            )
+            ui.print_hint(
+                f"Comparing {_short(first.path) if first.path else 'the earlier scan'} "
+                f"with {_short(second.path) if second.path else 'the later one'}.\n"
+            )
+        comparison = compare(first, second)
     except CompareError as exc:
         _fail(str(exc), exc.hint, code=2)
     ui.print_comparison(comparison)

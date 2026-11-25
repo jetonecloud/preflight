@@ -82,3 +82,68 @@ def test_a_missing_file_exits_2(tmp_path):
     result = invoke("diff", old, tmp_path / "nope.json")
     assert result.exit_code == 2
     assert "Couldn't read" in result.stderr
+
+
+# --- finding the scans on its own --------------------------------------------
+
+
+def report(directory, data, account="123456789012", stamp="20261101-090000"):
+    return write(directory / f"preflight-report-{account}-{stamp}.json", data)
+
+
+def test_no_arguments_compares_the_last_two_scans(tmp_path):
+    from test_compare import EARLIER
+
+    first, second, third = item(resource="vol-0aaa"), item(resource="vol-0bbb"), item()
+    report(tmp_path, export([first], when=EARLIER - (LATER - EARLIER)), stamp="20261018-090000")
+    report(tmp_path, export([first, second]), stamp="20261101-090000")
+    report(tmp_path, export([second, third], when=LATER), stamp="20261115-090000")
+    (tmp_path / "preflight-report-123456789012-20261115-090000.pdf").write_bytes(b"%PDF")
+    result = invoke("diff", "--in", tmp_path)
+    assert result.exit_code == 0, result.stderr
+    assert "20261101-090000.json with" in result.stderr
+    assert "20261115-090000.json" in result.stderr
+    assert "vol-0aaa" in result.stderr, "fixed between the last two"
+
+
+def test_naming_the_earlier_scan_finds_the_newest_since(tmp_path):
+    old = report(tmp_path, export([item()]), stamp="20261101-090000")
+    report(tmp_path, export([], when=LATER), stamp="20261115-090000")
+    result = invoke("diff", old, "--in", tmp_path)
+    assert result.exit_code == 0, result.stderr
+    assert "Fixed - gone" in result.stderr
+
+
+def test_another_accounts_newer_scan_is_left_alone(tmp_path):
+    report(tmp_path, export([item()]), stamp="20261101-090000")
+    report(tmp_path, export([], when=LATER), stamp="20261115-090000")
+    report(
+        tmp_path,
+        export([], when=LATER, account="210987654321"),
+        account="210987654321",
+        stamp="20261116-090000",
+    )
+    result = invoke("diff", "--in", tmp_path)
+    assert result.exit_code == 2
+    assert "Only one scan of 210987654321" in result.stderr
+
+
+def test_redacted_exports_are_passed_over(tmp_path):
+    report(tmp_path, export([item()]), stamp="20261101-090000")
+    report(tmp_path, export([], when=LATER), stamp="20261115-090000")
+    report(tmp_path, export([], when=LATER, redacted=True), stamp="20261116-090000")
+    result = invoke("diff", "--in", tmp_path)
+    assert result.exit_code == 0, result.stderr
+
+
+def test_an_empty_directory_says_what_to_do(tmp_path):
+    result = invoke("diff", "--in", tmp_path)
+    assert result.exit_code == 2
+    assert "No Preflight exports" in result.stderr
+
+
+def test_nothing_newer_than_the_named_scan(tmp_path):
+    old = report(tmp_path, export([item()]), stamp="20261101-090000")
+    result = invoke("diff", old, "--in", tmp_path)
+    assert result.exit_code == 2
+    assert "No later scan" in result.stderr

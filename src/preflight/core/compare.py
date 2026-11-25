@@ -308,3 +308,64 @@ def compare(before: Snapshot, after: Snapshot) -> Comparison:
         first_seen=tuple(sorted(first_seen, key=lambda unseen: unseen.id)),
         swapped=swapped,
     )
+
+
+# --- finding the scans to compare -------------------------------------------
+
+
+def exports_in(directory: Path) -> list[Snapshot]:
+    """Every readable, unredacted export in `directory`, oldest first.
+
+    Files that aren't exports - or are, but can't be matched up - are passed
+    over rather than refused: a directory of reports has PDFs in it too.
+    """
+    from preflight.core.naming import REPORT_STEM
+
+    found: list[Snapshot] = []
+    for path in sorted(directory.glob(f"{REPORT_STEM}-*.json")):
+        try:
+            snapshot = load(path)
+        except CompareError:
+            continue
+        if not snapshot.redacted:
+            found.append(snapshot)
+    found.sort(
+        key=lambda snapshot: (snapshot.finished_at, snapshot.path.name if snapshot.path else "")
+    )
+    return found
+
+
+def latest_pair(directory: Path, earlier: Snapshot | None = None) -> tuple[Snapshot, Snapshot]:
+    """The two scans to compare when they weren't both named.
+
+    With nothing named: the newest export in `directory`, and the one before
+    it for the same account. With `earlier` named: that, and the newest
+    export of its account written after it.
+    """
+    found = exports_in(directory)
+    if earlier is not None:
+        later = [
+            snapshot
+            for snapshot in found
+            if snapshot.account_id == earlier.account_id
+            and snapshot.finished_at > earlier.finished_at
+        ]
+        if not later:
+            raise CompareError(
+                f"No later scan of {earlier.account_id} in {directory}.",
+                "Run preflight scan again, or name the later export as well.",
+            )
+        return earlier, later[-1]
+    if not found:
+        raise CompareError(
+            f"No Preflight exports in {directory}.",
+            "Name two exports, or pass --in with the directory scans were written to.",
+        )
+    newest = found[-1]
+    same = [snapshot for snapshot in found if snapshot.account_id == newest.account_id]
+    if len(same) < 2:
+        raise CompareError(
+            f"Only one scan of {newest.account_id} in {directory}.",
+            "Scan again after fixing something, then compare the two.",
+        )
+    return same[-2], same[-1]
