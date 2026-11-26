@@ -26,6 +26,13 @@ from preflight.modules.reliability.common import (
 #: Editions that can't run Multi-AZ at all, so suggesting it would be noise.
 NO_MULTI_AZ_ENGINES = frozenset({"sqlserver-ex"})
 
+#: A snapshot this recent means backups are happening some other way - a
+#: nightly script, or AWS Backup - and the retention setting doesn't matter.
+RECENT_SNAPSHOT_DAYS = 2
+
+#: Past this, a restore would lose enough to call it high severity anyway.
+STALE_SNAPSHOT_DAYS = 30
+
 
 def _databases(ctx: ScanContext, region: str) -> list[dict[str, Any]]:
     return ctx.collect("rds:DescribeDBInstances", "DBInstances", region=region)
@@ -160,4 +167,111 @@ SINGLE_AZ_DATABASES = Check(
     ),
     actions=("rds:DescribeDBInstances",),
     run=single_az_databases,
+)
+
+
+# --- databases with nothing to restore from -------------------------------
+
+
+def databases_without_backups(ctx: ScanContext) -> Iterator[Finding]:
+    """Databases with automated backups off and no recent snapshot either."""
+    for region in ctx.regions:
+        for database in _databases(ctx, region):
+            if database.get("DBInstanceStatus") != "available":
+                continue
+            if database.get("DBClusterIdentifier"):
+                # Aurora backs up the cluster, and won't let retention go to zero.
+                continue
+            ctx.looked_at()
+            if int(database.get("BackupRetentionPeriod") or 0) > 0:
+                continue
+            if database.get("ReadReplicaSourceDBInstanceIdentifier"):
+                # Replicas are rebuilt from their source, not restored.
+                continue
+            tags = tags_to_dict(database.get("TagList"))
+            if ignored(tags) or non_production(tags):
+                continue
+            if too_new(ctx, database.get("InstanceCreateTime")):
+                continue
+
+            identifier = str(database.get("DBInstanceIdentifier"))
+            newest = _newest_snapshot_age(ctx, region, identifier)
+            if newest is not None and newest <= RECENT_SNAPSHOT_DAYS:
+                continue
+            yield _backup_finding(ctx, region, database, tags, newest)
+
+
+def _newest_snapshot_age(ctx: ScanContext, region: str, identifier: str) -> float | None:
+    """Days since the newest finished snapshot of this database, of any kind."""
+    ages = [
+        age
+        for snapshot in ctx.collect(
+            "rds:DescribeDBSnapshots",
+            "DBSnapshots",
+            region=region,
+            DBInstanceIdentifier=identifier,
+        )
+        if snapshot.get("Status") == "available"
+        and (age := ctx.days_since(snapshot.get("SnapshotCreateTime"))) is not None
+    ]
+    return min(ages) if ages else None
+
+
+def _backup_finding(
+    ctx: ScanContext,
+    region: str,
+    database: dict[str, Any],
+    tags: dict[str, str],
+    newest: float | None,
+) -> Finding:
+    identifier = str(database.get("DBInstanceIdentifier"))
+    engine = str(database.get("Engine") or "database")
+    evidence = [
+        "Automated backups are off (backup retention is 0 days), so there's no "
+        "point-in-time recovery: a bad migration or a dropped table can't be undone.",
+    ]
+    if newest is None:
+        title = f"{engine} database with nothing to restore from"
+        evidence.append("There are no snapshots of it either.")
+        severity = Severity.HIGH
+    else:
+        days = int(newest)
+        title = f"{engine} database whose last backup is {days} days old"
+        evidence.append(
+            f"The newest snapshot is {days} days old: restoring it would lose "
+            "everything written since."
+        )
+        severity = Severity.HIGH if newest > STALE_SNAPSHOT_DAYS else Severity.MEDIUM
+    caveat = environment_caveat(tags)
+    if caveat:
+        evidence.append(caveat)
+    return Finding(
+        check="databases-without-backups",
+        module=MODULE,
+        title=title,
+        resource=Resource(
+            id=identifier,
+            kind="rds:db",
+            region=region,
+            arn=database.get("DBInstanceArn") or ctx.arn("rds", region, f"db:{identifier}"),
+            tags=tags,
+        ),
+        evidence=tuple(evidence),
+        recommendation=(
+            "Set a backup retention period of at least 7 days. Automated backups "
+            "cost nothing up to the size of the database, and give you a restore "
+            "to any second inside the window. Changing it from 0 restarts the "
+            "instance, so do it in a maintenance window."
+        ),
+        confidence=confidence_for(tags),
+        severity=severity,
+    )
+
+
+DATABASES_WITHOUT_BACKUPS = Check(
+    key="databases-without-backups",
+    title="Databases with nothing to restore from",
+    looks_for="Running databases with automated backups off and no recent snapshot.",
+    actions=("rds:DescribeDBInstances", "rds:DescribeDBSnapshots"),
+    run=databases_without_backups,
 )

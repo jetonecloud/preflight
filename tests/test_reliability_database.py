@@ -5,7 +5,10 @@ from __future__ import annotations
 from conftest import days_ago, denied, findings, run, tags
 
 from preflight.core.findings import Confidence, Severity
-from preflight.modules.reliability.database import SINGLE_AZ_DATABASES
+from preflight.modules.reliability.database import (
+    DATABASES_WITHOUT_BACKUPS,
+    SINGLE_AZ_DATABASES,
+)
 
 ACCOUNT = "123456789012"
 
@@ -101,3 +104,72 @@ def test_skipped_without_permission():
     outcome = run(SINGLE_AZ_DATABASES, {"describe_db_instances": denied("DescribeDBInstances")})
     assert outcome.status == "skipped"
     assert outcome.missing_action == "rds:DescribeDBInstances"
+
+
+# --- databases with nothing to restore from -------------------------------
+
+
+def snapshot(identifier="orders", age=1, kind="manual", status="available"):
+    return {
+        "DBSnapshotIdentifier": f"{identifier}-{age}",
+        "DBInstanceIdentifier": identifier,
+        "SnapshotType": kind,
+        "Status": status,
+        "SnapshotCreateTime": days_ago(age),
+    }
+
+
+def no_backups(*snapshots, **extra):
+    return account(
+        database(BackupRetentionPeriod=0, **extra),
+        describe_db_snapshots={"DBSnapshots": list(snapshots)},
+    )
+
+
+def test_a_database_with_backups_is_fine_and_costs_no_snapshot_reads():
+    outcome = run(DATABASES_WITHOUT_BACKUPS, account(database()))
+    assert outcome.findings == ()
+    assert outcome.examined == 1
+
+
+def test_flags_a_database_with_no_backups_and_no_snapshots():
+    (found,) = findings(DATABASES_WITHOUT_BACKUPS, no_backups())
+    assert found.title == "postgres database with nothing to restore from"
+    assert found.level is Severity.HIGH
+    assert any("retention is 0 days" in line for line in found.evidence)
+
+
+def test_a_recent_snapshot_means_backups_happen_some_other_way():
+    """AWS Backup and nightly scripts make snapshots that aren't 'automated'."""
+    assert findings(DATABASES_WITHOUT_BACKUPS, no_backups(snapshot(age=1, kind="awsbackup"))) == ()
+
+
+def test_an_old_snapshot_is_reported_with_its_age():
+    (found,) = findings(DATABASES_WITHOUT_BACKUPS, no_backups(snapshot(age=12), snapshot(age=40)))
+    assert found.title == "postgres database whose last backup is 12 days old"
+    assert found.level is Severity.MEDIUM
+
+
+def test_a_very_old_snapshot_is_as_bad_as_none():
+    (found,) = findings(DATABASES_WITHOUT_BACKUPS, no_backups(snapshot(age=90)))
+    assert found.level is Severity.HIGH
+
+
+def test_an_unfinished_snapshot_doesnt_count():
+    (found,) = findings(DATABASES_WITHOUT_BACKUPS, no_backups(snapshot(age=0, status="creating")))
+    assert found.title.endswith("nothing to restore from")
+
+
+def test_replicas_aurora_and_dev_databases_are_left_alone():
+    replica = database("r", BackupRetentionPeriod=0, ReadReplicaSourceDBInstanceIdentifier="o")
+    aurora = database("a", BackupRetentionPeriod=0, DBClusterIdentifier="app")
+    dev = database("d", BackupRetentionPeriod=0, TagList=tags(Environment="test"))
+    assert findings(DATABASES_WITHOUT_BACKUPS, account(replica, aurora, dev)) == ()
+
+
+def test_skipped_when_snapshots_cant_be_read():
+    responses = no_backups()
+    responses["describe_db_snapshots"] = denied("DescribeDBSnapshots")
+    outcome = run(DATABASES_WITHOUT_BACKUPS, responses)
+    assert outcome.status == "skipped"
+    assert outcome.missing_action == "rds:DescribeDBSnapshots"
