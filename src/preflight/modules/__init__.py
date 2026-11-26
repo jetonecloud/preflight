@@ -17,11 +17,9 @@ from preflight.modules.base import (
     UnknownModuleError,
 )
 from preflight.modules.cost import COST
+from preflight.modules.delivery import DELIVERY
 from preflight.modules.observability import OBSERVABILITY
-from preflight.modules.planned import (
-    BUS_FACTOR,
-    DELIVERY,
-)
+from preflight.modules.planned import BUS_FACTOR
 from preflight.modules.reliability import RELIABILITY
 from preflight.modules.security import SECURITY
 

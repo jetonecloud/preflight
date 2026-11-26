@@ -11,26 +11,6 @@ from __future__ import annotations
 
 from preflight.modules.base import Module
 
-DELIVERY = Module(
-    key="delivery",
-    name="Delivery & IaC",
-    summary="How much is managed as code, CloudFormation drift, deploy strategy, "
-    "`latest` image tags, stale AMIs, SSH-only access.",
-    iam_actions=(
-        "cloudformation:ListStacks",
-        "cloudformation:DescribeStacks",
-        "cloudformation:DescribeStackDriftDetectionStatus",
-        "cloudformation:DescribeStackResourceDrifts",
-        "ecr:DescribeRepositories",
-        "ecr:DescribeImages",
-        "ec2:DescribeImages",
-        "ec2:DescribeLaunchTemplates",
-        "ec2:DescribeSecurityGroups",
-        "codedeploy:ListApplications",
-        "codedeploy:GetDeploymentConfig",
-    ),
-)
-
 BUS_FACTOR = Module(
     key="bus-factor",
     name="Bus factor",

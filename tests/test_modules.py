@@ -65,12 +65,13 @@ def test_registry_matches_the_checked_in_policy():
     assert on_disk - declared == set(), "in iam/policy.json but no module claims it"
 
 
-def test_four_modules_are_available():
+def test_five_modules_are_available():
     assert [module.key for module in available_modules()] == [
         "cost",
         "observability",
         "security",
         "reliability",
+        "delivery",
     ]
 
 
@@ -100,14 +101,14 @@ def test_resolve_rejects_unknown_modules():
 
 def test_resolve_rejects_modules_that_have_not_shipped():
     with pytest.raises(ModuleNotAvailableError) as caught:
-        resolve(["delivery"])
-    assert caught.value.keys == ("delivery",)
+        resolve(["bus-factor"])
+    assert caught.value.keys == ("bus-factor",)
 
 
 def test_unknown_is_reported_before_not_available():
     """A typo and a coming-soon module together: the typo is the real mistake."""
     with pytest.raises(UnknownModuleError):
-        resolve(["delivery", "nope"])
+        resolve(["bus-factor", "nope"])
 
 
 # --- checks and the actions they declare ----------------------------------
