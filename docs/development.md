@@ -4,7 +4,7 @@ Everything you need to build, run and poke at Preflight locally. For the
 rules a change has to follow, see [`CONTRIBUTING.md`](../CONTRIBUTING.md);
 for what the checks actually do, see
 [`cost-check.md`](cost-check.md), [`observability.md`](observability.md),
-[`security.md`](security.md) and [`reliability.md`](reliability.md); for comparing scans, [`compare.md`](compare.md).
+[`security.md`](security.md), [`reliability.md`](reliability.md) and [`delivery.md`](delivery.md); for comparing scans, [`compare.md`](compare.md).
 
 ## Setup, once
 
@@ -143,6 +143,8 @@ CI runs the same lint and tests, plus a check that
 | [`src/preflight/modules/observability/`](../src/preflight/modules/observability/) | The three observability checks: `alarms` and `logs` |
 | [`src/preflight/modules/security/`](../src/preflight/modules/security/) | The six security checks: `identity` (root, users, keys), `network`, `storage` and `trail` |
 | [`src/preflight/modules/reliability/`](../src/preflight/modules/reliability/) | The five reliability checks: `database`, `balancing`, `containers` and `scaling`, plus `common` for deciding what's production |
+| [`src/preflight/modules/delivery/`](../src/preflight/modules/delivery/) | The three delivery checks: `stacks`, `images` and `amis` |
+| [`src/preflight/modules/environment.py`](../src/preflight/modules/environment.py) | Deciding from its tags whether something is production, for every module that asks |
 | [`src/preflight/modules/base.py`](../src/preflight/modules/base.py) | What a `Module` and a `Check` are |
 | [`src/preflight/core/pricing.py`](../src/preflight/core/pricing.py) | The price table — **re-check against AWS before a release** |
 | [`src/preflight/core/scan.py`](../src/preflight/core/scan.py) | The runner, and the guard that refuses any call a check didn't declare |
@@ -162,4 +164,5 @@ CI runs the same lint and tests, plus a check that
 | [`docs/observability.md`](observability.md) | The same for the Observability Check |
 | [`docs/security.md`](security.md) | The same for the Security Check |
 | [`docs/reliability.md`](reliability.md) | The same for the Reliability Check |
+| [`docs/delivery.md`](delivery.md) | The same for the Delivery Check |
 | [`docs/release.md`](release.md) | How a tag becomes binaries, a wheel, an image and a formula |

@@ -143,6 +143,22 @@ No dollar figures. Anything tagged `Environment=dev`, `staging` or similar is al
 preflight scan --role-arn <arn> --modules reliability   # just this one
 ```
 
+## What the Delivery Check looks for
+
+Whether what's running is what was deployed, and could be deployed again.
+
+| Check | Looks for |
+|---|---|
+| CloudFormation stacks you can't deploy with confidence | Stacks stuck after a failed deploy, and stacks whose last drift detection found hand edits |
+| Services that deploy a moving image tag | ECS services running `:latest` or an untagged image, which the next restart may quietly change |
+| Instances you couldn't launch again | Running instances whose AMI has been deregistered, or was built more than a year ago |
+
+No dollar figures. Preflight never starts drift detection, which is a write: it reports what the last one found and how long ago. An image pinned by digest, or `:latest` in an ECR repository with immutable tags, can't move, so neither is reported. [`docs/delivery.md`](docs/delivery.md) has the details.
+
+```sh
+preflight scan --role-arn <arn> --modules delivery   # just this one
+```
+
 ## Permissions and your data
 
 [`iam/policy.json`](iam/policy.json) uses only `Get`, `List` and `Describe` actions, with no wildcards. Each check declares what it needs, so a generated role covers the checks you picked and nothing else — Preflight refuses to emit a policy containing a write verb or a wildcard.
