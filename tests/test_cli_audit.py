@@ -115,7 +115,8 @@ def test_the_json_report_carries_the_command_that_made_it(workdir, sample_accoun
     path = next(workdir.glob("*.json"))
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["preflight"]["command"] == (
-        f"preflight scan --modules cost,observability,security --role-arn {ROLE} --region us-east-1"
+        "preflight scan --modules cost,observability,security,reliability "
+        f"--role-arn {ROLE} --region us-east-1"
     )
     assert data["scan"]["regions"] == ["us-east-1"]
 
@@ -200,7 +201,7 @@ def test_the_lookback_window_reaches_the_report(workdir, sample_account):
 
 
 def test_an_unavailable_module_is_rejected(workdir, sample_account):
-    result = invoke("scan", "--role-arn", ROLE, "--modules", "reliability", "--yes")
+    result = invoke("scan", "--role-arn", ROLE, "--modules", "delivery", "--yes")
     assert result.exit_code == 2
     assert "isn't available yet" in result.stderr
 
@@ -561,5 +562,7 @@ def test_an_account_with_nothing_wrong_says_so(workdir, monkeypatch):
 
     data = json.loads(next(workdir.glob("*.json")).read_text(encoding="utf-8"))
     assert data["summary"]["findings"] == 0
-    assert data["summary"]["checks_run"] == 18, "nine cost, three observability, six security"
+    assert data["summary"]["checks_run"] == 23, (
+        "nine cost, three observability, six security, five reliability"
+    )
     assert data["spend"] is None

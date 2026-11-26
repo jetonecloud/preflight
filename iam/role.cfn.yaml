@@ -73,7 +73,6 @@ Resources:
               - cloudformation:DescribeStackDriftDetectionStatus
               - cloudformation:DescribeStackResourceDrifts
               - cloudformation:ListStacks
-              - ecs:DescribeClusters
               - ecs:DescribeServices
               - ecs:ListClusters
               - ecs:ListServices

@@ -11,25 +11,6 @@ from __future__ import annotations
 
 from preflight.modules.base import Module
 
-RELIABILITY = Module(
-    key="reliability",
-    name="Reliability",
-    summary="Single-AZ databases, missing backups, no autoscaling, missing health checks.",
-    iam_actions=(
-        "ec2:DescribeInstances",
-        "rds:DescribeDBInstances",
-        "rds:DescribeDBSnapshots",
-        "autoscaling:DescribeAutoScalingGroups",
-        "elasticloadbalancing:DescribeLoadBalancers",
-        "elasticloadbalancing:DescribeTargetGroups",
-        "elasticloadbalancing:DescribeTargetHealth",
-        "ecs:ListClusters",
-        "ecs:ListServices",
-        "ecs:DescribeClusters",
-        "ecs:DescribeServices",
-    ),
-)
-
 DELIVERY = Module(
     key="delivery",
     name="Delivery & IaC",

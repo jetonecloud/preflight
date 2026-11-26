@@ -172,7 +172,7 @@ def test_unknown_module_is_rejected():
 
 
 def test_coming_soon_module_is_rejected_with_a_clear_reason():
-    result = invoke("scan", "--modules", "reliability")
+    result = invoke("scan", "--modules", "delivery")
     assert result.exit_code == 2
     assert "isn't available yet" in result.stderr
 
@@ -267,7 +267,7 @@ def test_a_bad_answer_is_asked_again(workdir, cost_template):
 
 
 def test_a_coming_soon_answer_is_asked_again(workdir, cost_template):
-    result = invoke("scan", "--print", input="reliability\ncost\n\n")
+    result = invoke("scan", "--print", input="delivery\ncost\n\n")
     assert result.exit_code == 0
     assert "isn't available yet" in result.stderr
     assert result.stdout == cost_template
