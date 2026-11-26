@@ -11,10 +11,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from preflight.core.findings import Confidence
+from preflight.core.findings import Confidence, Severity
 from preflight.core.scan import ScanContext
 
 MODULE = "reliability"
+
+#: One thing wrong with a resource: (severity, title, evidence, the step
+#: that fixes it). A resource with several gets one finding, led by the worst.
+Problem = tuple[Severity, str, str, str]
 
 #: Something created this week may still be being set up.
 MIN_RESOURCE_AGE_DAYS = 7

@@ -17,14 +17,12 @@ from preflight.core.scan import ScanContext, ignored, tags_to_dict
 from preflight.modules.base import Check
 from preflight.modules.reliability.common import (
     MODULE,
+    Problem,
     confidence_for,
     environment_caveat,
     non_production,
     too_new,
 )
-
-#: (severity, title, evidence, the step that fixes it)
-Problem = tuple[Severity, str, str, str]
 
 #: Suspending any of these stops a group from replacing what's broken.
 HEALING_PROCESSES = ("Launch", "Terminate", "HealthCheck", "ReplaceUnhealthy")
