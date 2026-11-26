@@ -125,6 +125,24 @@ No dollar figures here either. The guards still hold: 443 open to the world is a
 preflight scan --role-arn <arn> --modules security   # just this one
 ```
 
+## What the Reliability Check looks for
+
+What one failure would take down: a host, a zone, a bad migration.
+
+| Check | Looks for |
+|---|---|
+| Databases with nothing to restore from | Backups switched off, and no recent snapshot of any kind either |
+| Databases with no standby | Multi-AZ off, or an Aurora cluster with nothing to fail over to |
+| Load-balanced services one failure from down | Every target failing its health check, a lone target nothing replaces, or every target in one zone |
+| ECS services one task from down | No tasks running, a single task, or a single subnet |
+| Auto Scaling groups that can't heal | Replacement suspended, deaf to the load balancer's health checks, or confined to one zone |
+
+No dollar figures. Anything tagged `Environment=dev`, `staging` or similar is allowed to fall over and isn't mentioned; anything tagged production is reported with high confidence. The other guards: a nightly snapshot counts as a backup, a target group an Auto Scaling group manages can have one target, and a service mid-deploy isn't judged on its counts. [`docs/reliability.md`](docs/reliability.md) has the details.
+
+```sh
+preflight scan --role-arn <arn> --modules reliability   # just this one
+```
+
 ## Permissions and your data
 
 [`iam/policy.json`](iam/policy.json) uses only `Get`, `List` and `Describe` actions, with no wildcards. Each check declares what it needs, so a generated role covers the checks you picked and nothing else — Preflight refuses to emit a policy containing a write verb or a wildcard.

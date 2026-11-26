@@ -3,8 +3,8 @@
 Everything you need to build, run and poke at Preflight locally. For the
 rules a change has to follow, see [`CONTRIBUTING.md`](../CONTRIBUTING.md);
 for what the checks actually do, see
-[`cost-check.md`](cost-check.md), [`observability.md`](observability.md)
-and [`security.md`](security.md); for comparing scans, [`compare.md`](compare.md).
+[`cost-check.md`](cost-check.md), [`observability.md`](observability.md),
+[`security.md`](security.md) and [`reliability.md`](reliability.md); for comparing scans, [`compare.md`](compare.md).
 
 ## Setup, once
 
@@ -142,6 +142,7 @@ CI runs the same lint and tests, plus a check that
 | [`src/preflight/modules/cost/`](../src/preflight/modules/cost/) | The nine cost checks, grouped by what they read: `storage`, `network`, `compute`, `database` |
 | [`src/preflight/modules/observability/`](../src/preflight/modules/observability/) | The three observability checks: `alarms` and `logs` |
 | [`src/preflight/modules/security/`](../src/preflight/modules/security/) | The six security checks: `identity` (root, users, keys), `network`, `storage` and `trail` |
+| [`src/preflight/modules/reliability/`](../src/preflight/modules/reliability/) | The five reliability checks: `database`, `balancing`, `containers` and `scaling`, plus `common` for deciding what's production |
 | [`src/preflight/modules/base.py`](../src/preflight/modules/base.py) | What a `Module` and a `Check` are |
 | [`src/preflight/core/pricing.py`](../src/preflight/core/pricing.py) | The price table — **re-check against AWS before a release** |
 | [`src/preflight/core/scan.py`](../src/preflight/core/scan.py) | The runner, and the guard that refuses any call a check didn't declare |
@@ -160,4 +161,5 @@ CI runs the same lint and tests, plus a check that
 | [`docs/cost-check.md`](cost-check.md) | Full reference: thresholds, guards, methodology |
 | [`docs/observability.md`](observability.md) | The same for the Observability Check |
 | [`docs/security.md`](security.md) | The same for the Security Check |
+| [`docs/reliability.md`](reliability.md) | The same for the Reliability Check |
 | [`docs/release.md`](release.md) | How a tag becomes binaries, a wheel, an image and a formula |
