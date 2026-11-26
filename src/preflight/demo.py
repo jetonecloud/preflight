@@ -22,6 +22,7 @@ from preflight.core.scan import ScanContext, ScanProgress, run_module
 from preflight.core.session import AwsSession, Identity
 from preflight.core.spend import ServiceSpend, Spend
 from preflight.modules.cost import COST
+from preflight.modules.delivery import DELIVERY
 from preflight.modules.observability import OBSERVABILITY
 from preflight.modules.reliability import RELIABILITY
 from preflight.modules.security import SECURITY
@@ -29,7 +30,7 @@ from preflight.modules.security import SECURITY
 ACCOUNT_ID = "123456789012"
 REGIONS = ("us-east-1", "eu-west-1")
 LOOKBACK_DAYS = 14
-MODULES = (COST, OBSERVABILITY, SECURITY, RELIABILITY)
+MODULES = (COST, OBSERVABILITY, SECURITY, RELIABILITY, DELIVERY)
 
 IDENTITY = Identity(
     account_id=ACCOUNT_ID,
@@ -186,8 +187,21 @@ class DemoClient:
             snapshots.append(snapshot)
         return {"Snapshots": snapshots}
 
-    def _describe_images(self, **_: Any) -> dict[str, Any]:
-        return {"Images": list(_IMAGES.get(self.region, []))}
+    def _describe_images(self, **params: Any) -> dict[str, Any]:
+        wanted = set(params.get("ImageIds") or ())
+        images = []
+        for spec in _IMAGES.get(self.region, []):
+            image = dict(spec)
+            image["CreationDate"] = self._days_ago(image.pop("age_days")).strftime(
+                "%Y-%m-%dT%H:%M:%S.000Z"
+            )
+            if wanted and image["ImageId"] not in wanted:
+                continue
+            if not wanted and image.pop("public", False):
+                # Owners=["self"]: an Amazon image isn't ours.
+                continue
+            images.append(image)
+        return {"Images": images}
 
     def _describe_instances(self, **params: Any) -> dict[str, Any]:
         wanted = _filter_values(params, "instance-state-name")
@@ -278,6 +292,10 @@ class DemoClient:
             service["serviceArn"] = self._service_arn(spec)
             service["createdAt"] = self._days_ago(service.pop("age_days"))
             service["status"] = "ACTIVE"
+            service["taskDefinition"] = (
+                f"arn:aws:ecs:{self.region}:{ACCOUNT_ID}:task-definition/"
+                + service.pop("task_definition")
+            )
             service.setdefault("runningCount", service["desiredCount"])
             service.setdefault("schedulingStrategy", "REPLICA")
             service.setdefault("deployments", [{"status": "PRIMARY", "rolloutState": "COMPLETED"}])
@@ -286,6 +304,53 @@ class DemoClient:
             if service["serviceArn"] in wanted:
                 described.append(service)
         return {"services": described}
+
+    def _describe_task_definition(self, **params: Any) -> dict[str, Any]:
+        arn = str(params.get("taskDefinition"))
+        image = _TASK_IMAGES.get(arn.rsplit("/", 1)[-1])
+        if image is None:
+            raise _no_such("ClientException", "DescribeTaskDefinition")
+        return {
+            "taskDefinition": {
+                "taskDefinitionArn": arn,
+                "containerDefinitions": [{"name": "app", "image": image}],
+            }
+        }
+
+    # --- ECR ---------------------------------------------------------------
+
+    def _describe_repositories(self, **_: Any) -> dict[str, Any]:
+        return {"repositories": list(_REPOSITORIES.get(self.region, []))}
+
+    # --- CloudFormation ----------------------------------------------------
+
+    def _describe_stacks(self, **_: Any) -> dict[str, Any]:
+        stacks = []
+        for spec in _STACKS.get(self.region, []):
+            stack = dict(spec)
+            stack["StackId"] = (
+                f"arn:aws:cloudformation:{self.region}:{ACCOUNT_ID}:stack/{stack['StackName']}/1"
+            )
+            stack["CreationTime"] = self._days_ago(stack.pop("age_days"))
+            stack["LastUpdatedTime"] = self._days_ago(stack.pop("updated_days_ago"))
+            drift: dict[str, Any] = {"StackDriftStatus": stack.pop("drift", "NOT_CHECKED")}
+            checked = stack.pop("drift_checked_days_ago", None)
+            if checked is not None:
+                drift["LastCheckTimestamp"] = self._days_ago(checked)
+            stack["DriftInformation"] = drift
+            stack.setdefault("Tags", [])
+            stacks.append(stack)
+        return {"Stacks": stacks}
+
+    def _describe_stack_resource_drifts(self, **params: Any) -> dict[str, Any]:
+        name = str(params.get("StackName")).split("/")[1]
+        wanted = set(params.get("StackResourceDriftStatusFilters") or ())
+        drifts = [
+            {"LogicalResourceId": logical, "StackResourceDriftStatus": status}
+            for logical, status in _STACK_DRIFTS.get(name, [])
+            if not wanted or status in wanted
+        ]
+        return {"StackResourceDrifts": drifts}
 
     def _service_arn(self, spec: dict[str, Any]) -> str:
         return f"arn:aws:ecs:{self.region}:{ACCOUNT_ID}:service/main/{spec['serviceName']}"
@@ -667,8 +732,16 @@ _IMAGES: dict[str, list[dict[str, Any]]] = {
         {
             "ImageId": "ami-0123456789abcdef0",
             "Name": "app-base-2025-04",
+            "age_days": 590,
             "BlockDeviceMappings": [{"Ebs": {"SnapshotId": "snap-0123456789abcdef1"}}],
-        }
+        },
+        {
+            # Amazon's own base image, recent: what the next build should start from.
+            "ImageId": "ami-0f00dba5e2026a001",
+            "Name": "al2023-ami-2023.6-kernel-6.1-x86_64",
+            "age_days": 40,
+            "public": True,
+        },
     ],
     "eu-west-1": [],
 }
@@ -681,6 +754,8 @@ _INSTANCES: dict[str, list[dict[str, Any]]] = {
             "State": {"Name": "stopped"},
             "age_days": 400,
             "stopped_days_ago": 118,
+            # Its image went with the staging clean-up, but it's stopped: nothing to replace.
+            "ImageId": "ami-0dead000000000001",
             "Tags": _tags(Name="staging-api", Environment="staging", Owner="platform"),
         },
         {
@@ -690,6 +765,7 @@ _INSTANCES: dict[str, list[dict[str, Any]]] = {
             "State": {"Name": "stopped"},
             "age_days": 90,
             "stopped_days_ago": 6,
+            "ImageId": "ami-0f00dba5e2026a001",
             "Tags": _tags(Name="perf-test-runner"),
         },
         {
@@ -698,6 +774,8 @@ _INSTANCES: dict[str, list[dict[str, Any]]] = {
             "State": {"Name": "running"},
             "age_days": 260,
             "Placement": {"Tenancy": "default"},
+            # Built by hand from a console snapshot, which was later deleted.
+            "ImageId": "ami-0c0ffee000000beef",
             "Tags": _tags(Name="reporting-worker", Owner="data"),
         },
         {
@@ -707,6 +785,8 @@ _INSTANCES: dict[str, list[dict[str, Any]]] = {
             "State": {"Name": "running"},
             "age_days": 300,
             "Placement": {"Tenancy": "default"},
+            # Launched from last spring's base image and patched by hand since.
+            "ImageId": "ami-0123456789abcdef0",
             "Tags": _tags(Name="api-1"),
         },
     ],
@@ -879,6 +959,7 @@ _ECS_SERVICES: dict[str, dict[str, list[dict[str, Any]]]] = {
         "arn:aws:ecs:us-east-1:123456789012:cluster/main": [
             {
                 "serviceName": "web",
+                "task_definition": "web:41",
                 "desiredCount": 3,
                 "subnets": ["subnet-0a11ce0000000001a", "subnet-0a11ce0000000001b"],
                 "tags": [{"key": "Environment", "value": "production"}],
@@ -886,6 +967,7 @@ _ECS_SERVICES: dict[str, dict[str, list[dict[str, Any]]]] = {
             },
             {
                 "serviceName": "checkout-worker",
+                "task_definition": "checkout-worker:12",
                 "desiredCount": 1,
                 "subnets": ["subnet-0a11ce0000000001a"],
                 "tags": [{"key": "Environment", "value": "production"}],
@@ -893,6 +975,7 @@ _ECS_SERVICES: dict[str, dict[str, list[dict[str, Any]]]] = {
             },
             {
                 "serviceName": "notifications",
+                "task_definition": "notifications:7",
                 "desiredCount": 2,
                 "runningCount": 0,
                 "subnets": ["subnet-0a11ce0000000001a", "subnet-0a11ce0000000001b"],
@@ -901,6 +984,7 @@ _ECS_SERVICES: dict[str, dict[str, list[dict[str, Any]]]] = {
             },
             {
                 "serviceName": "preview",
+                "task_definition": "preview:88",
                 "desiredCount": 1,
                 "subnets": ["subnet-0a11ce0000000001a"],
                 "tags": [{"key": "env", "value": "preview"}],
@@ -908,6 +992,7 @@ _ECS_SERVICES: dict[str, dict[str, list[dict[str, Any]]]] = {
             },
             {
                 "serviceName": "report-builder",
+                "task_definition": "report-builder:1",
                 "desiredCount": 1,
                 "subnets": ["subnet-0a11ce0000000001a"],
                 "tags": [],
@@ -916,6 +1001,91 @@ _ECS_SERVICES: dict[str, dict[str, list[dict[str, Any]]]] = {
         ]
     },
     "eu-west-1": {},
+}
+
+# --- delivery -------------------------------------------------------------
+#
+# Web deploys :latest, but from an ECR repository with immutable tags, so it
+# can't move. The checkout worker's repository isn't, and notifications pulls
+# an untagged image from GitHub's registry. The preview app runs :latest by
+# design, and the report builder is two days old.
+
+_ECR = "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+
+_TASK_IMAGES: dict[str, str] = {
+    "web:41": f"{_ECR}/web:latest",
+    "checkout-worker:12": f"{_ECR}/checkout:latest",
+    "notifications:7": "ghcr.io/acme/notifier",
+    "preview:88": f"{_ECR}/web:latest",
+    "report-builder:1": f"{_ECR}/report-builder:latest",
+}
+
+_REPOSITORIES: dict[str, list[dict[str, Any]]] = {
+    "us-east-1": [
+        {"repositoryName": "web", "imageTagMutability": "IMMUTABLE"},
+        {"repositoryName": "checkout", "imageTagMutability": "MUTABLE"},
+        {"repositoryName": "report-builder", "imageTagMutability": "MUTABLE"},
+    ],
+    "eu-west-1": [],
+}
+
+# The data pipeline's last update failed and so did its rollback, almost a
+# month ago; its nested queue stack failed with it. Someone opened a port on
+# the app's security group in the console, and the network stack noticed.
+# The search stack failed to create this morning - someone's on it.
+
+_STACKS: dict[str, list[dict[str, Any]]] = {
+    "us-east-1": [
+        {
+            "StackName": "app-prod",
+            "StackStatus": "UPDATE_COMPLETE",
+            "age_days": 600,
+            "updated_days_ago": 3,
+            "drift": "IN_SYNC",
+            "drift_checked_days_ago": 3,
+            "Tags": _tags(Environment="production"),
+        },
+        {
+            "StackName": "network",
+            "StackStatus": "UPDATE_COMPLETE",
+            "age_days": 700,
+            "updated_days_ago": 140,
+            "drift": "DRIFTED",
+            "drift_checked_days_ago": 12,
+        },
+        {
+            "StackName": "data-pipeline",
+            "StackStatus": "UPDATE_ROLLBACK_FAILED",
+            "age_days": 400,
+            "updated_days_ago": 26,
+            "Tags": _tags(Owner="data"),
+        },
+        {
+            "StackName": "data-pipeline-Queues-1X2Y3Z",
+            "StackStatus": "UPDATE_ROLLBACK_FAILED",
+            "age_days": 400,
+            "updated_days_ago": 26,
+            "ParentId": "arn:aws:cloudformation:us-east-1:123456789012:stack/data-pipeline/1",
+        },
+        {
+            "StackName": "search",
+            "StackStatus": "ROLLBACK_COMPLETE",
+            "age_days": 0.2,
+            "updated_days_ago": 0.2,
+        },
+    ],
+    "eu-west-1": [
+        {
+            "StackName": "reports-eu",
+            "StackStatus": "CREATE_COMPLETE",
+            "age_days": 300,
+            "updated_days_ago": 300,
+        },
+    ],
+}
+
+_STACK_DRIFTS: dict[str, list[tuple[str, str]]] = {
+    "network": [("AppSecurityGroup", "MODIFIED"), ("PrivateRouteTable", "MODIFIED")],
 }
 
 _DATABASES: dict[str, list[dict[str, Any]]] = {

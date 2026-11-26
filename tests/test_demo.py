@@ -21,7 +21,7 @@ def report():
 
 def test_every_check_runs_and_nothing_is_skipped():
     result = report()
-    assert len(result.outcomes) == 23
+    assert len(result.outcomes) == 26
     assert all(outcome.ran for outcome in result.outcomes)
     assert result.complete
 
@@ -174,6 +174,34 @@ def test_the_reliability_guards_hold_on_the_sample_account():
     assert "main/web" not in reliable, "three tasks in two subnets"
     assert "main/preview" not in reliable, "a preview environment"
     assert "main/report-builder" not in reliable, "two days old"
+
+
+def test_delivery_findings_claim_no_saving():
+    delivered = [f for f in report().findings if f.module == "delivery"]
+    assert delivered
+    assert all(finding.estimate is None for finding in delivered)
+
+
+def test_the_sample_drifts_from_its_code():
+    delivered = {f.resource.id for f in report().findings if f.module == "delivery"}
+    assert "data-pipeline" in delivered, "update and rollback both failed, a month ago"
+    assert "network" in delivered, "a port opened on the app's security group by hand"
+    assert "main/checkout-worker" in delivered, ":latest in a repository where tags move"
+    assert "main/notifications" in delivered, "an untagged image from another registry"
+    assert "ami-0c0ffee000000beef" in delivered, "the reporting worker's image is gone"
+    assert "ami-0123456789abcdef0" in delivered, "api-1 runs last spring's base image"
+
+
+def test_the_delivery_guards_hold_on_the_sample_account():
+    delivered = {f.resource.id for f in report().findings if f.module == "delivery"}
+    assert "app-prod" not in delivered, "in sync, checked three days ago"
+    assert "search" not in delivered, "failed this morning: someone's on it"
+    assert "data-pipeline-Queues-1X2Y3Z" not in delivered, "fixed through its parent"
+    assert "main/web" not in delivered, ":latest, but the repository's tags are immutable"
+    assert "main/preview" not in delivered, "a preview environment"
+    assert "main/report-builder" not in delivered, "two days old"
+    assert "ami-0dead000000000001" not in delivered, "only a stopped instance uses it"
+    assert "ami-0f00dba5e2026a001" not in delivered, "only a stopped instance, and recent"
 
 
 def test_the_dates_move_with_the_calendar():
