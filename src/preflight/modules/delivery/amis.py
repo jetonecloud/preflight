@@ -119,8 +119,8 @@ def _judge(
             reason=(
                 f"{_label(image_id, image)} was built {int(age)} days ago. Everything "
                 "patched, installed or configured on these instances since then exists "
-                "only on them, so a replacement launched from it would come up a year "
-                "behind."
+                "only on them, so a replacement launched from it would come up missing "
+                "all of it."
             ),
             step=(
                 "Build a fresh image from your current setup (EC2 Image Builder, Packer, "

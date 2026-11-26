@@ -104,3 +104,9 @@ def test_skipped_without_permission():
     outcome = run(CHECK, responses)
     assert outcome.status == "skipped"
     assert outcome.missing_action == "ec2:DescribeImages"
+
+
+def test_the_evidence_doesnt_round_the_age_down_to_a_year():
+    (found,) = findings(CHECK, account(instance(), images=[image(built=900)]))
+    assert "900 days ago" in found.evidence[1]
+    assert "a year behind" not in found.evidence[1]
