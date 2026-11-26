@@ -308,7 +308,7 @@ def test_demo_reports_each_check_as_it_finishes(workdir):
     """The sample arrives a line at a time, like the scan it imitates."""
     result = invoke("demo")
     lines = [line for line in result.stderr.splitlines() if line.startswith("  ! ")]
-    assert len(lines) == 18, "every check in the sample finds something"
+    assert len(lines) == 23, "every check in the sample finds something"
 
 
 def test_the_sample_does_not_sit_there_pausing_down_a_pipe(workdir, monkeypatch):

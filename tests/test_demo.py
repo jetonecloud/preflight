@@ -21,7 +21,7 @@ def report():
 
 def test_every_check_runs_and_nothing_is_skipped():
     result = report()
-    assert len(result.outcomes) == 18
+    assert len(result.outcomes) == 23
     assert all(outcome.ran for outcome in result.outcomes)
     assert result.complete
 
@@ -147,6 +147,33 @@ def test_the_security_guards_hold_on_the_sample_account():
     assert "app-user-uploads" not in ids, "private and blocked"
     assert "marketing-site" not in ids, "public on purpose, and tagged to say so"
     assert "sydney-pilot" not in ids, "not in a scanned region"
+
+
+def test_reliability_findings_claim_no_saving():
+    reliable = [f for f in report().findings if f.module == "reliability"]
+    assert reliable
+    assert all(finding.estimate is None for finding in reliable)
+
+
+def test_the_sample_can_break_as_well():
+    ids = found_ids(report())
+    assert "reports-eu" in ids, "backups off for an import, and never back on"
+    assert "prod-admin" in ids, "both targets failing a health check for a page that's gone"
+    assert "main/notifications" in ids, "crash-looping since a secret was rotated"
+    assert "main/checkout-worker" in ids, "one task, one subnet"
+    assert "api-asg" in ids, "deaf to its load balancer's health checks"
+    assert "batch-workers" in ids, "healing suspended to debug an AMI, last spring"
+
+
+def test_the_reliability_guards_hold_on_the_sample_account():
+    reliable = {f.resource.id for f in report().findings if f.module == "reliability"}
+    assert "app-prod" not in reliable, "Multi-AZ, with a week of backups"
+    assert "prod" not in reliable, "one target, but a scaling group replaces it"
+    assert "staging" not in reliable, "tagged staging"
+    assert "nightly-etl" not in reliable, "one zone, but parked at zero"
+    assert "main/web" not in reliable, "three tasks in two subnets"
+    assert "main/preview" not in reliable, "a preview environment"
+    assert "main/report-builder" not in reliable, "two days old"
 
 
 def test_the_dates_move_with_the_calendar():

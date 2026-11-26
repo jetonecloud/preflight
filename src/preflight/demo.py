@@ -23,12 +23,13 @@ from preflight.core.session import AwsSession, Identity
 from preflight.core.spend import ServiceSpend, Spend
 from preflight.modules.cost import COST
 from preflight.modules.observability import OBSERVABILITY
+from preflight.modules.reliability import RELIABILITY
 from preflight.modules.security import SECURITY
 
 ACCOUNT_ID = "123456789012"
 REGIONS = ("us-east-1", "eu-west-1")
 LOOKBACK_DAYS = 14
-MODULES = (COST, OBSERVABILITY, SECURITY)
+MODULES = (COST, OBSERVABILITY, SECURITY, RELIABILITY)
 
 IDENTITY = Identity(
     account_id=ACCOUNT_ID,
@@ -206,7 +207,12 @@ class DemoClient:
     # --- Auto Scaling ------------------------------------------------------
 
     def _describe_auto_scaling_groups(self, **_: Any) -> dict[str, Any]:
-        return {"AutoScalingGroups": list(_ASGS.get(self.region, []))}
+        groups = []
+        for spec in _ASGS.get(self.region, []):
+            group = dict(spec)
+            group["CreatedTime"] = self._days_ago(group.pop("age_days"))
+            groups.append(group)
+        return {"AutoScalingGroups": groups}
 
     # --- Load balancers ----------------------------------------------------
 
@@ -242,14 +248,47 @@ class DemoClient:
 
     def _describe_db_snapshots(self, **params: Any) -> dict[str, Any]:
         wanted = params.get("SnapshotType")
+        database = params.get("DBInstanceIdentifier")
         snapshots = []
         for spec in _DB_SNAPSHOTS.get(self.region, []):
             snapshot = dict(spec)
             snapshot["SnapshotCreateTime"] = self._days_ago(snapshot.pop("age_days"))
             if wanted and snapshot.get("SnapshotType") != wanted:
                 continue
+            if database and snapshot.get("DBInstanceIdentifier") != database:
+                continue
             snapshots.append(snapshot)
         return {"DBSnapshots": snapshots}
+
+    # --- ECS ---------------------------------------------------------------
+
+    def _list_clusters(self, **_: Any) -> dict[str, Any]:
+        return {"clusterArns": list(_ECS_SERVICES.get(self.region, {}))}
+
+    def _list_services(self, **params: Any) -> dict[str, Any]:
+        services = _ECS_SERVICES.get(self.region, {}).get(str(params.get("cluster")), [])
+        return {"serviceArns": [self._service_arn(spec) for spec in services]}
+
+    def _describe_services(self, **params: Any) -> dict[str, Any]:
+        cluster = str(params.get("cluster"))
+        wanted = set(params.get("services") or ())
+        described = []
+        for spec in _ECS_SERVICES.get(self.region, {}).get(cluster, []):
+            service = dict(spec)
+            service["serviceArn"] = self._service_arn(spec)
+            service["createdAt"] = self._days_ago(service.pop("age_days"))
+            service["status"] = "ACTIVE"
+            service.setdefault("runningCount", service["desiredCount"])
+            service.setdefault("schedulingStrategy", "REPLICA")
+            service.setdefault("deployments", [{"status": "PRIMARY", "rolloutState": "COMPLETED"}])
+            subnets = service.pop("subnets")
+            service["networkConfiguration"] = {"awsvpcConfiguration": {"subnets": subnets}}
+            if service["serviceArn"] in wanted:
+                described.append(service)
+        return {"services": described}
+
+    def _service_arn(self, spec: dict[str, Any]) -> str:
+        return f"arn:aws:ecs:{self.region}:{ACCOUNT_ID}:service/main/{spec['serviceName']}"
 
     # --- CloudWatch --------------------------------------------------------
 
@@ -674,12 +713,61 @@ _INSTANCES: dict[str, list[dict[str, Any]]] = {
     "eu-west-1": [],
 }
 
+_PROD_TARGETS = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/prod/1"
+_ADMIN_TARGETS = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/prod-admin/2"
+
+# --- what replaces it when it breaks --------------------------------------
+#
+# The API tier scales, but only replaces instances that crash outright: it
+# was set up before the load balancer and never told to listen to it. The
+# batch workers had healing suspended to debug a bad AMI last spring. The
+# nightly ETL group sits in one zone, but it's parked at zero, so that's fine.
+
 _ASGS: dict[str, list[dict[str, Any]]] = {
     "us-east-1": [
         {
             "AutoScalingGroupName": "api-asg",
             "Instances": [{"InstanceId": "i-0b5a9c1d2e3f40002"}],
-        }
+            "MinSize": 1,
+            "MaxSize": 4,
+            "DesiredCapacity": 1,
+            "AvailabilityZones": ["us-east-1a", "us-east-1b"],
+            "HealthCheckType": "EC2",
+            "TargetGroupARNs": [_PROD_TARGETS],
+            "SuspendedProcesses": [],
+            "Tags": _tags(Environment="production", Owner="platform"),
+            "age_days": 420,
+        },
+        {
+            "AutoScalingGroupName": "batch-workers",
+            "Instances": [],
+            "MinSize": 2,
+            "MaxSize": 6,
+            "DesiredCapacity": 2,
+            "AvailabilityZones": ["us-east-1a", "us-east-1b", "us-east-1c"],
+            "HealthCheckType": "EC2",
+            "TargetGroupARNs": [],
+            "SuspendedProcesses": [
+                {"ProcessName": "ReplaceUnhealthy", "SuspensionReason": "User suspended"},
+                {"ProcessName": "HealthCheck", "SuspensionReason": "User suspended"},
+            ],
+            "Tags": _tags(Owner="data"),
+            "age_days": 380,
+        },
+        {
+            # One zone, but parked at zero: nothing to heal.
+            "AutoScalingGroupName": "nightly-etl",
+            "Instances": [],
+            "MinSize": 0,
+            "MaxSize": 2,
+            "DesiredCapacity": 0,
+            "AvailabilityZones": ["us-east-1a"],
+            "HealthCheckType": "EC2",
+            "TargetGroupARNs": [],
+            "SuspendedProcesses": [],
+            "Tags": _tags(Owner="data"),
+            "age_days": 200,
+        },
     ],
     "eu-west-1": [],
 }
@@ -723,15 +811,28 @@ _TARGET_GROUPS: dict[str, list[dict[str, Any]]] = {
             "TargetGroupArn": (
                 "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/staging/1"
             ),
+            "TargetGroupName": "staging",
+            "TargetType": "instance",
             "LoadBalancerArns": [
                 "arn:aws:elasticloadbalancing:us-east-1:123456789012:"
                 "loadbalancer/app/staging-alb/50dc6c495c0c9188"
             ],
         },
         {
-            "TargetGroupArn": (
-                "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/prod/1"
-            ),
+            "TargetGroupArn": _PROD_TARGETS,
+            "TargetGroupName": "prod",
+            "TargetType": "instance",
+            "LoadBalancerArns": [
+                "arn:aws:elasticloadbalancing:us-east-1:123456789012:"
+                "loadbalancer/app/prod-alb/9f1c2b3a4d5e6f70"
+            ],
+        },
+        {
+            # The /admin route. Its health check still asks for /healthz,
+            # which the admin app stopped serving two releases ago.
+            "TargetGroupArn": _ADMIN_TARGETS,
+            "TargetGroupName": "prod-admin",
+            "TargetType": "ip",
             "LoadBalancerArns": [
                 "arn:aws:elasticloadbalancing:us-east-1:123456789012:"
                 "loadbalancer/app/prod-alb/9f1c2b3a4d5e6f70"
@@ -743,9 +844,70 @@ _TARGET_GROUPS: dict[str, list[dict[str, Any]]] = {
 
 _TARGET_HEALTH: dict[str, list[dict[str, Any]]] = {
     "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/staging/1": [],
-    "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/prod/1": [
+    _PROD_TARGETS: [
         {"Target": {"Id": "i-0b5a9c1d2e3f40002"}, "TargetHealth": {"State": "healthy"}},
     ],
+    _ADMIN_TARGETS: [
+        {
+            "Target": {"Id": "10.0.3.17", "AvailabilityZone": "us-east-1a"},
+            "TargetHealth": {"State": "unhealthy", "Reason": "Target.ResponseCodeMismatch"},
+        },
+        {
+            "Target": {"Id": "10.0.4.22", "AvailabilityZone": "us-east-1b"},
+            "TargetHealth": {"State": "unhealthy", "Reason": "Target.ResponseCodeMismatch"},
+        },
+    ],
+}
+
+# --- containers -----------------------------------------------------------
+#
+# The web service runs three tasks across two subnets. The checkout worker
+# runs one, in the one subnet it was first deployed to. Notifications has
+# been crash-looping since a secret was rotated. The preview app is allowed
+# to be fragile, and the report builder only went up two days ago.
+
+_ECS_SERVICES: dict[str, dict[str, list[dict[str, Any]]]] = {
+    "us-east-1": {
+        "arn:aws:ecs:us-east-1:123456789012:cluster/main": [
+            {
+                "serviceName": "web",
+                "desiredCount": 3,
+                "subnets": ["subnet-0a11ce0000000001a", "subnet-0a11ce0000000001b"],
+                "tags": [{"key": "Environment", "value": "production"}],
+                "age_days": 300,
+            },
+            {
+                "serviceName": "checkout-worker",
+                "desiredCount": 1,
+                "subnets": ["subnet-0a11ce0000000001a"],
+                "tags": [{"key": "Environment", "value": "production"}],
+                "age_days": 240,
+            },
+            {
+                "serviceName": "notifications",
+                "desiredCount": 2,
+                "runningCount": 0,
+                "subnets": ["subnet-0a11ce0000000001a", "subnet-0a11ce0000000001b"],
+                "tags": [],
+                "age_days": 180,
+            },
+            {
+                "serviceName": "preview",
+                "desiredCount": 1,
+                "subnets": ["subnet-0a11ce0000000001a"],
+                "tags": [{"key": "env", "value": "preview"}],
+                "age_days": 90,
+            },
+            {
+                "serviceName": "report-builder",
+                "desiredCount": 1,
+                "subnets": ["subnet-0a11ce0000000001a"],
+                "tags": [],
+                "age_days": 2,
+            },
+        ]
+    },
+    "eu-west-1": {},
 }
 
 _DATABASES: dict[str, list[dict[str, Any]]] = {
@@ -761,6 +923,7 @@ _DATABASES: dict[str, list[dict[str, Any]]] = {
             "TagList": _tags(Name="analytics-staging", Owner="data"),
         },
         {
+            # Multi-AZ, a week of backups: the one thing done properly.
             "DBInstanceIdentifier": "app-prod",
             "DBInstanceArn": "arn:aws:rds:us-east-1:123456789012:db:app-prod",
             "DBInstanceStatus": "available",
@@ -768,11 +931,15 @@ _DATABASES: dict[str, list[dict[str, Any]]] = {
             "Engine": "postgres",
             "AllocatedStorage": 500,
             "StorageType": "gp3",
-            "TagList": _tags(Name="app-prod"),
+            "MultiAZ": True,
+            "BackupRetentionPeriod": 7,
+            "AvailabilityZone": "us-east-1a",
+            "TagList": _tags(Name="app-prod", Environment="production"),
         },
     ],
     "eu-west-1": [
         {
+            # Backups switched off to speed up a bulk import, and never back on.
             "DBInstanceIdentifier": "reports-eu",
             "DBInstanceArn": "arn:aws:rds:eu-west-1:123456789012:db:reports-eu",
             "DBInstanceStatus": "available",
@@ -780,6 +947,10 @@ _DATABASES: dict[str, list[dict[str, Any]]] = {
             "Engine": "mysql",
             "AllocatedStorage": 100,
             "StorageType": "gp3",
+            "MultiAZ": False,
+            "BackupRetentionPeriod": 0,
+            "AvailabilityZone": "eu-west-1b",
+            "InstanceCreateTime": "2025-09-01T00:00:00+00:00",
             "TagList": _tags(Name="reports-eu", Owner="data"),
         },
     ],

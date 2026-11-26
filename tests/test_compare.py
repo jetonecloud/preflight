@@ -81,7 +81,7 @@ def test_reads_what_a_scan_writes(tmp_path):
     snapshot = load(path)
     assert snapshot.account_id == demo.ACCOUNT_ID
     assert snapshot.demo
-    assert snapshot.modules == ("cost", "observability", "security")
+    assert snapshot.modules == ("cost", "observability", "security", "reliability")
     assert snapshot.checks["unattached-ebs-volumes"] == "ran"
     assert all(key.count("/") >= 3 for key in snapshot.findings)
 
