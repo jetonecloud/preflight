@@ -164,3 +164,18 @@ def test_skipped_without_permission():
     outcome = run(CHECK, responses)
     assert outcome.status == "skipped"
     assert outcome.missing_action == "elasticloadbalancing:DescribeTargetHealth"
+
+
+def test_says_why_the_targets_are_failing():
+    failing = {
+        "Target": {"Id": "i-1"},
+        "TargetHealth": {
+            "State": "unhealthy",
+            "Reason": "Target.ResponseCodeMismatch",
+            "Description": "Health checks failed with these codes: [404]",
+        },
+    }
+    (found,) = findings(CHECK, account([failing, dict(failing)]))
+    assert any(
+        "AWS says: Health checks failed with these codes: [404]." in line for line in found.evidence
+    )

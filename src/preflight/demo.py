@@ -850,11 +850,19 @@ _TARGET_HEALTH: dict[str, list[dict[str, Any]]] = {
     _ADMIN_TARGETS: [
         {
             "Target": {"Id": "10.0.3.17", "AvailabilityZone": "us-east-1a"},
-            "TargetHealth": {"State": "unhealthy", "Reason": "Target.ResponseCodeMismatch"},
+            "TargetHealth": {
+                "State": "unhealthy",
+                "Reason": "Target.ResponseCodeMismatch",
+                "Description": "Health checks failed with these codes: [404]",
+            },
         },
         {
             "Target": {"Id": "10.0.4.22", "AvailabilityZone": "us-east-1b"},
-            "TargetHealth": {"State": "unhealthy", "Reason": "Target.ResponseCodeMismatch"},
+            "TargetHealth": {
+                "State": "unhealthy",
+                "Reason": "Target.ResponseCodeMismatch",
+                "Description": "Health checks failed with these codes: [404]",
+            },
         },
     ],
 }

@@ -91,6 +91,13 @@ def fragile_load_balanced_services(ctx: ScanContext) -> Iterator[Finding]:
 
             states = [str(target["TargetHealth"]["State"]) for target in targets]
             if all(state == "unhealthy" for state in states):
+                reasons = sorted(
+                    {
+                        str(target["TargetHealth"].get("Description") or reason)
+                        for target in targets
+                        if (reason := target["TargetHealth"].get("Reason"))
+                    }
+                )
                 yield _finding(
                     ctx,
                     region,
@@ -100,7 +107,8 @@ def fragile_load_balanced_services(ctx: ScanContext) -> Iterator[Finding]:
                     title="Load balancer with nothing healthy behind it",
                     what=(
                         f"All {len(targets)} registered target(s) are failing their "
-                        "health checks right now."
+                        "health checks right now"
+                        + (f" - AWS says: {'; '.join(reasons)}." if reasons else ".")
                     ),
                     why=(
                         "Requests are either being refused or, with fail-open, sent "
